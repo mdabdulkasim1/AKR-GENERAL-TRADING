@@ -76,8 +76,25 @@
 
       .head { display: flex; align-items: flex-start; gap: 14px; border-bottom: 2px solid #0E3A5C; padding-bottom: 9px; }
       /* Contained, never stretched: a logo squashed to fit is not the logo. */
-      .head .logo { width: 78px; flex: 0 0 78px; display: flex; align-items: center; }
-      .head .logo img { max-width: 100%; max-height: 62px; width: auto; height: auto; object-fit: contain; }
+      /*
+       * Sized by its height, not boxed to a square.
+       *
+       * A letterhead lock-up is wide — a badge with the company's name beside
+       * it — and a fixed square slot shrinks it to a stamp. So the height is
+       * what is fixed and the width follows the artwork, up to a third of the
+       * page; a square badge comes out square, a wide lock-up comes out wide.
+       */
+      .head .logo { flex: 0 0 auto; max-width: 215px; display: flex; align-items: center; }
+      /*
+       * The height is set, the width follows the artwork.
+       *
+       * Not max-height alone: an SVG carries no intrinsic size of its own, so
+       * in a flex row it collapses to nothing and the letterhead prints with a
+       * blank where the logo should be. Giving it a height makes the width
+       * follow the aspect ratio, and a square badge and a wide lock-up both
+       * come out at their own proportions.
+       */
+      .head .logo img { height: 56px; width: auto; max-width: 215px; object-fit: contain; }
       .head .who { flex: 1; }
       .head .who .name { font: 700 17px Georgia, "Times New Roman", serif; color: #0E3A5C; letter-spacing: .4px; }
       .head .who .tag { font-size: 8px; letter-spacing: 1.6px; text-transform: uppercase; color: #14663F; margin-top: 2px; font-weight: 600; }
@@ -178,8 +195,20 @@
   // ------------------------------------------------------------- fragments
   /** The mark, laid faintly behind whatever is printed. */
   const hasLogo = () => Boolean(window.APP && APP.company && APP.company.logoSet);
-  const logoSrc = () => location.origin
-    + (((window.APP && APP.company && APP.company.logo) || '/assets/logo-icon.svg'));
+  const co = () => (window.APP && APP.company) || {};
+  /*
+   * Two slots, and a letterhead wants the other one.
+   *
+   * The badge on its own is right in a sidebar, in a browser tab and ghosted
+   * behind a page. The head of a printed document is where a company puts its
+   * full lock-up — the mark with its name beside it — which is the artwork
+   * anybody hands you when you ask for "the logo for our letterhead". So the
+   * letterhead takes `full` and falls back to the badge; the watermark stays
+   * the badge, because a wide lock-up stretched across a page is not a
+   * watermark.
+   */
+  const markSrc = () => location.origin + (co().logo || '/assets/logo-icon.svg');
+  const logoSrc = () => location.origin + (co().logoFull || co().logo || '/assets/logo.svg');
 
   /*
    * No artwork uploaded yet: print nothing rather than a placeholder.
@@ -189,15 +218,23 @@
    * is simply a letterhead — the company's name, address and TRN are all there
    * in type already.
    */
-  const watermark = () => (hasLogo() ? `<div class="watermark"><img src="${logoSrc()}" alt=""></div>` : '');
+  const watermark = () => (hasLogo() ? `<div class="watermark"><img src="${markSrc()}" alt=""></div>` : '');
 
   function letterhead(company) {
     const c = company || (window.APP && APP.company) || {};
+    /*
+     * A lock-up carries the company's name in the artwork itself. Setting it
+     * again in type beside it prints the name twice across the top of every
+     * invoice, which is how a letterhead comes to look like a mistake. So where
+     * a full lock-up has been uploaded, the head is the artwork and the address
+     * — the name is already in the picture.
+     */
+    const lockup = hasLogo() && c.logoFullUploaded;
     return `<div class="head">
       ${hasLogo() ? `<div class="logo"><img src="${logoSrc()}" alt=""></div>` : ''}
       <div class="who">
-        <div class="name">${esc(c.name || 'AKR GENERAL TRADING L.L.C')}</div>
-        <div class="tag">${esc((window.APP && APP.tagline) || 'Trusted Trading Partner for Valves, Fittings & Construction Materials')}</div>
+        ${lockup ? '' : `<div class="name">${esc(c.name || 'AKR GENERAL TRADING L.L.C')}</div>
+        <div class="tag">${esc((window.APP && APP.tagline) || 'Trusted Trading Partner for Valves, Fittings & Construction Materials')}</div>`}
         <div class="addr">${esc(c.address || '')}${c.phone ? ' · T ' + esc(c.phone) : ''}${c.email ? ' · ' + esc(c.email) : ''}${c.website ? ' · ' + esc(c.website) : ''}</div>
       </div>
       <div class="trn">${c.trn ? `<b>TRN ${esc(c.trn)}</b>` : '<b class="stamp-note">TRN not set</b>'}</div>

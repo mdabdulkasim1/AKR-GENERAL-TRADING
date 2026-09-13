@@ -99,7 +99,14 @@ Sign in with any of the desks below and the starter password **`akr@2026`**.
 Upload it once under **Masters → Logo** and it is everywhere: the sidebar, the sign-in page, the
 letterhead on every printed document, the watermark behind them, and the browser tab. There are two
 slots — the badge on its own and the badge with the wordmark — and **either stands in for the other**,
-so one upload is enough. Replacing it changes every one of those at once, because the URL carries a
+so one upload is enough.
+
+**The two slots are not interchangeable on paper, though.** A letterhead takes the **lock-up**, which
+is the artwork anybody hands you when you ask for "the logo for our letterhead" — the mark with the
+company's name set beside it. The **badge** goes in the sidebar, the browser tab and the watermark,
+because a wide lock-up ghosted across a page is not a watermark. Upload the lock-up into the second
+slot and the printed head also stops setting the company's name in type beside it: the name is
+already in the picture, and printing it twice is how a letterhead comes to look like a mistake. Replacing it changes every one of those at once, because the URL carries a
 fingerprint of the file.
 
 **The mark ships with the code**, drawn as SVG in `public/assets`, so the ERP is branded on the first

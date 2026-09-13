@@ -39,6 +39,11 @@ function context(user) {
       // Whether that artwork is the company's own file or the bundled
       // rendition of it. The Logo screen says which; nothing else needs to.
       logoUploaded: Boolean(branding.resolve('mark')),
+      // Whether a full lock-up — the mark with the company's name set into the
+      // artwork — has been uploaded for the `full` slot specifically. A
+      // letterhead that prints such artwork must not then print the same name
+      // again in type beside it.
+      logoFullUploaded: Boolean(branding.find('full')),
       // Whether to put a light plate behind it — see services/branding.js.
       logoPlate: branding.settings().plate,
       bankName: company.bank_name, bankAccount: company.bank_account, iban: company.iban, swift: company.swift,

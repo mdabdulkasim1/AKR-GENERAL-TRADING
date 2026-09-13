@@ -462,3 +462,42 @@ test('the version is readable without signing in', async () => {
   const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
   assert.match(app, /class="build-badge"/, 'and it puts it on the page');
 });
+
+test('a letterhead prints the lock-up, and does not set the name twice', async () => {
+  /*
+   * Two slots, and the head of a printed document wants the other one: the
+   * badge is for a sidebar, a browser tab and the watermark, while a letterhead
+   * carries the full lock-up — the artwork anybody hands you when you ask for
+   * "the logo for our letterhead". That artwork has the company's name set into
+   * it, so the name must not then be printed again in type beside it.
+   */
+  for (const slot of ['mark', 'full']) branding.clear(slot);
+  const printer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'print.js'), 'utf8');
+
+  assert.match(printer, /const logoSrc = \(\) => location\.origin \+ \(co\(\)\.logoFull/,
+    'the letterhead takes the lock-up, falling back to the badge');
+  assert.match(printer, /watermark = \(\) => \(hasLogo\(\) \? `<div class="watermark"><img src="\$\{markSrc\(\)\}/,
+    'and the watermark stays the badge — a wide lock-up ghosted across a page is not a watermark');
+  assert.match(printer, /const lockup = hasLogo\(\) && c\.logoFullUploaded;/,
+    'the duplicated name is suppressed only when real lock-up artwork is there');
+  assert.match(printer, /\.head \.logo img \{ height: 56px; width: auto;/,
+    'sized by height so an SVG does not collapse to nothing in a flex row');
+
+  // Nothing in the full slot: the name is still needed in type.
+  const bare = await admin.get('/api/auth/me');
+  assert.equal(bare.company.logoFullUploaded, false);
+
+  // A lock-up uploaded: the page is told, so the head drops the typed name.
+  await admin.post('/api/masters/branding/full',
+    { data: PNG.toString('base64'), mime: 'image/png', filename: 'lockup.png' });
+  const after = await admin.get('/api/auth/me');
+  assert.equal(after.company.logoFullUploaded, true);
+  assert.match(after.company.logoFull, /^\/api\/branding\/full\?v=/);
+
+  // A badge in the mark slot alone never counts as a lock-up.
+  branding.clear('full');
+  await admin.post('/api/masters/branding/mark',
+    { data: PNG.toString('base64'), mime: 'image/png', filename: 'badge.png' });
+  assert.equal((await admin.get('/api/auth/me')).company.logoFullUploaded, false,
+    'the badge standing in for the lock-up keeps the name in type');
+});
