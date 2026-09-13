@@ -42,8 +42,22 @@ const volumePath = env.RAILWAY_VOLUME_MOUNT_PATH || env.DATA_DIR || null;
 const defaultDbFile = volumePath ? path.join(volumePath, 'akr.db') : './data/akr.db';
 const dbFile = path.resolve(root, env.DB_FILE || defaultDbFile);
 
+/*
+ * Which commit is actually running.
+ *
+ * Three days were lost to a deployment that had not picked up any of the work
+ * pushed for it, with nobody able to tell from the outside — the screens looked
+ * the same, so the code was assumed to be the same. Railway hands the container
+ * the commit it built, so the application can simply say. It goes in the
+ * sidebar, under the person's name, and on the health check.
+ */
+const release = (env.RAILWAY_GIT_COMMIT_SHA || env.GIT_COMMIT_SHA || env.SOURCE_COMMIT || '')
+  .trim().slice(0, 7) || null;
+
 module.exports = {
   root,
+  release,
+  releaseBranch: (env.RAILWAY_GIT_BRANCH || '').trim() || null,
   port: Number(env.PORT || 4000),
   nodeEnv: env.NODE_ENV || 'development',
   isProd: env.NODE_ENV === 'production',
@@ -118,6 +132,26 @@ module.exports = {
      */
     logo: env.COMPANY_LOGO || '/assets/logo-icon.svg',
     logoFull: env.COMPANY_LOGO_FULL || '/assets/logo.svg',
+
+    /*
+     * The artwork, given to the deployment rather than uploaded to it.
+     *
+     * An upload is written beside the database, and on a platform with no
+     * volume mounted that is inside the container it rebuilds on every deploy —
+     * so the logo goes in on Monday and is gone on Tuesday, which is exactly
+     * what happened here. An environment variable is not in the container: the
+     * platform holds it and hands it back on every deploy. So either of these,
+     * set once on the service, survives what an upload cannot.
+     *
+     *   COMPANY_LOGO_URL   a link to the file, fetched when the app starts
+     *   COMPANY_LOGO_DATA  the file itself — SVG markup, or base64, or a
+     *                      data: URI pasted straight in
+     *
+     * Neither overrides artwork somebody has uploaded by hand; they are what
+     * the system falls back on instead of the drawing that ships with it.
+     */
+    logoUrl: (env.COMPANY_LOGO_URL || '').trim(),
+    logoData: (env.COMPANY_LOGO_DATA || '').trim(),
   },
 
   /*

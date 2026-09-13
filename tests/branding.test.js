@@ -143,18 +143,30 @@ test('the screen says how big the artwork is, and when it is too small', async (
   assert.match(await res.text(), /<circle/);
 });
 
-test('the placeholder is type, not somebody else\'s bird', () => {
+test('the bundled artwork is real, safe and says what it is', () => {
   /*
-   * This file used to be a drawing of the company's own mark, which is the one
-   * thing a system must never put on an invoice: an approximation of a logo,
-   * printed as though it were the logo. It is now plainly a stand-in.
+   * The company's mark ships in the source. A logo is not source code, and the
+   * long way round would be an upload — but an upload needs a volume to survive
+   * a deploy, and until there is one the ERP would go back to a blank plate
+   * every release. So the mark is here, drawn, and every file says in its own
+   * comment that it is a rendition to be replaced under Masters -> Logo.
+   *
+   * What must not be here: a placeholder that announces itself on a client's
+   * copy of an invoice, and anything executable in artwork that goes on every
+   * screen and every printed page.
    */
   for (const name of ['logo-icon.svg', 'logo.svg', 'favicon.svg']) {
     const svg = fs.readFileSync(path.join(__dirname, '..', 'public', 'assets', name), 'utf8');
-    assert.match(svg, /LOGO NOT SET/, `${name} says it is a placeholder`);
-    assert.ok(!/plume|feather|beak|bird/i.test(svg), `${name} draws nobody's mark`);
-    assert.ok(!/<path/i.test(svg), `${name} is type and boxes, not artwork`);
+    assert.ok(!/LOGO NOT SET/i.test(svg), `${name} does not announce a missing logo`);
+    assert.match(svg, /<path/i, `${name} is artwork, not an apology`);
+    assert.match(svg, /Masters -> Logo/, `${name} says how to replace it`);
+    assert.ok(!/<script[\s>]/i.test(svg), `${name} carries no script`);
+    assert.ok(!/\son\w+\s*=/i.test(svg), `${name} carries no event handler`);
   }
+
+  // The lock-up carries the wordmark; the mark on its own does not.
+  const full = fs.readFileSync(path.join(__dirname, '..', 'public', 'assets', 'logo.svg'), 'utf8');
+  assert.match(full, /GENERAL TRADING LLC/);
 });
 
 test('the screen warns when an upload would not survive a deploy', async () => {
@@ -242,16 +254,21 @@ test('a page that declares no logo says so plainly', async () => {
   }
 });
 
-test('a document with no logo is a letterhead, not a complaint', async () => {
+test('every document is printed on a letterhead, uploaded or not', async () => {
   /*
-   * A quotation goes to a client. A box on it announcing that the logo has not
-   * been set is worse than no logo at all — the company's name, address and TRN
-   * are already there in type. So with nothing uploaded, no image is printed
-   * and no watermark is ghosted behind the page.
+   * A quotation goes to a client, so what goes on it has to be the mark or
+   * nothing at all — never a box announcing that the logo has not been set.
+   * With the artwork bundled there is always a mark to print, so the page is
+   * told so whether or not anything has been uploaded; the Logo screen keeps
+   * the separate question of whose file it is.
    */
   for (const slot of ['mark', 'full']) branding.clear(slot);
-  const me = await admin.get('/api/auth/me');
-  assert.equal(me.company.logoSet, false, 'the page is told there is no artwork');
+  const bare = await admin.get('/api/auth/me');
+  assert.equal(bare.company.logoSet, true, 'there is always a mark to print');
+  assert.equal(bare.company.logoUploaded, false, 'and it is the bundled one');
+  // Fingerprinted, because the static file is cached for an hour in production
+  // and a deploy that changes it must not be defeated by that cache.
+  assert.match(bare.company.logo, /^\/assets\/logo-icon\.svg\?v=[0-9a-f]{10}$/);
 
   const printer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'print.js'), 'utf8');
   assert.match(printer, /const watermark = \(\) => \(hasLogo\(\)/,
@@ -261,6 +278,187 @@ test('a document with no logo is a letterhead, not a complaint', async () => {
 
   await admin.post('/api/masters/branding/mark',
     { data: PNG.toString('base64'), mime: 'image/png', filename: 'akr.png' });
-  assert.equal((await admin.get('/api/auth/me')).company.logoSet, true,
-    'and it says so the moment there is');
+  const after = await admin.get('/api/auth/me');
+  assert.equal(after.company.logoUploaded, true, 'the company\'s own file takes over');
+  assert.match(after.company.logo, /^\/api\/branding\/mark\?v=/);
+});
+
+test('the health check says which build is running and what it shows', async () => {
+  /*
+   * "The logo is still not showing" has three causes that look identical from
+   * a screenshot: the deploy has not landed, the browser is holding the old
+   * file, or something uploaded is overriding the artwork in the build. This
+   * endpoint separates them, from outside, without a sign-in.
+   */
+  for (const slot of ['mark', 'full']) branding.clear(slot);
+  let health = await fetch(`${h.base}/api/health`).then((r) => r.json());
+  assert.match(health.build, /^[0-9a-f]{10}$/, 'the build that is running');
+  assert.equal(health.branding.mark, 'bundled');
+  assert.match(health.branding.markUrl, /^\/assets\/logo-icon\.svg\?v=/);
+
+  await admin.post('/api/masters/branding/mark',
+    { data: PNG.toString('base64'), mime: 'image/png', filename: 'akr.png' });
+  health = await fetch(`${h.base}/api/health`).then((r) => r.json());
+  assert.equal(health.branding.mark, 'uploaded', 'and when an upload is overriding it');
+  assert.match(health.branding.markUrl, /^\/api\/branding\/mark\?v=/);
+});
+
+test('an admin is told on screen when the books are not being kept', async () => {
+  /*
+   * This was a warning in the server's console, and nobody reads a container's
+   * console. The context carries it now, and the shell paints it across the top
+   * of every screen for the person who can act on it.
+   */
+  const me = await admin.get('/api/auth/me');
+  assert.ok(['ephemeral', 'volume', 'local'].includes(me.storage));
+  assert.notEqual(me.storage, 'ephemeral', 'in a test run the books are kept');
+
+  const shell = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+  assert.match(shell, /APP\.storage === 'ephemeral' && APP\.user\.role === 'admin'/,
+    'and the banner is shown to the one person who can mount a volume');
+  assert.match(shell, /storage-warning/);
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+  assert.match(css, /\.storage-warning \{/, 'and it is styled to be read, not skimmed past');
+});
+
+test('the logo can be given to the deployment, so a deploy cannot lose it', async (t) => {
+  /*
+   * With no volume mounted an upload lives inside the container the platform
+   * rebuilds on every deploy — which is why the logo kept disappearing on the
+   * live service. An environment variable is held by the platform, not by the
+   * container, so it comes back on every start.
+   */
+  const config = require('../src/config');
+  const original = { url: config.company.logoUrl, data: config.company.logoData };
+  t.after(() => {
+    config.company.logoUrl = original.url;
+    config.company.logoData = original.data;
+    for (const slot of ['mark', 'full']) branding.clear(slot);
+  });
+
+  // 1. plain SVG markup, pasted straight into the setting
+  for (const slot of ['mark', 'full']) branding.clear(slot);
+  config.company.logoData = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">'
+    + '<rect width="8" height="8" fill="#12563C"/></svg>';
+  config.company.logoUrl = '';
+  let done = await branding.installFromEnv();
+  assert.equal(done.source, 'COMPANY_LOGO_DATA');
+  assert.equal(branding.source('mark'), 'environment');
+  assert.equal(branding.find('mark').mime, 'image/svg+xml');
+  assert.match((await admin.get('/api/auth/me')).company.logo, /^\/api\/branding\/mark\?v=/);
+
+  // 2. the same thing as a data: URI, which is what a browser copies
+  for (const slot of ['mark', 'full']) branding.clear(slot);
+  config.company.logoData = `data:image/png;base64,${PNG.toString('base64')}`;
+  done = await branding.installFromEnv();
+  assert.equal(done.source, 'COMPANY_LOGO_DATA');
+  assert.equal(branding.find('mark').mime, 'image/png');
+
+  // 3. an upload by hand outranks it — a person's act beats a setting
+  const already = await branding.installFromEnv();
+  assert.ok(already.skipped, 'and it does not overwrite what is already there');
+
+  // 4. rubbish in the setting is reported, not fatal — the books still open
+  for (const slot of ['mark', 'full']) branding.clear(slot);
+  config.company.logoData = Buffer.from('this is not a picture').toString('base64');
+  const bad = await branding.installFromEnv();
+  assert.ok(bad.error, 'it says what went wrong');
+  assert.equal(branding.source('mark'), 'bundled', 'and falls back to the bundled mark');
+  const health = await fetch(`${h.base}/api/health`).then((r) => r.json());
+  assert.equal(health.ok, true);
+  assert.equal(health.branding.mark, 'bundled');
+});
+
+test('changing the setting changes the logo, and a hand upload still wins', async (t) => {
+  /*
+   * The trap this closes: the first start writes the logo onto the volume, and
+   * every later start finds a file already there and leaves it alone — so
+   * correcting a wrong COMPANY_LOGO_URL does nothing, for ever, with no way to
+   * tell why. A note beside the artwork records which setting put it there.
+   */
+  const config = require('../src/config');
+  const original = { url: config.company.logoUrl, data: config.company.logoData };
+  const svg = (colour) => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8">'
+    + `<rect width="8" height="8" fill="${colour}"/></svg>`;
+  const served = async () => (await fetch(`${h.base}/api/branding/mark`)).text();
+  t.after(() => {
+    config.company.logoUrl = original.url;
+    config.company.logoData = original.data;
+    for (const slot of ['mark', 'full']) branding.clear(slot);
+  });
+
+  for (const slot of ['mark', 'full']) branding.clear(slot);
+  config.company.logoUrl = '';
+  config.company.logoData = svg('#111111');
+  await branding.installFromEnv();
+  assert.match(await served(), /#111111/);
+  assert.equal(branding.source('mark'), 'environment');
+
+  // A restart with the setting unchanged does not re-fetch or re-write.
+  const again = await branding.installFromEnv();
+  assert.equal(again.skipped, 'already installed');
+  assert.equal(branding.source('mark'), 'environment', 'and it still knows where it came from');
+
+  // The setting is corrected: the new artwork must take over.
+  config.company.logoData = svg('#222222');
+  await branding.installFromEnv();
+  assert.match(await served(), /#222222/, 'a changed setting is installed');
+
+  // Somebody uploads by hand: that is a person's decision and outranks it.
+  await admin.post('/api/masters/branding/mark',
+    { data: Buffer.from(svg('#333333')).toString('base64'), mime: 'image/svg+xml', filename: 'a.svg' });
+  assert.equal(branding.source('mark'), 'uploaded');
+  config.company.logoData = svg('#444444');
+  const held = await branding.installFromEnv();
+  assert.equal(held.skipped, 'something was uploaded by hand');
+  assert.match(await served(), /#333333/, 'the upload stands');
+
+  // The setting is taken away entirely: so is what it put in.
+  for (const slot of ['mark', 'full']) branding.clear(slot);
+  config.company.logoData = svg('#555555');
+  await branding.installFromEnv();
+  assert.match(await served(), /#555555/);
+  config.company.logoData = '';
+  const gone = await branding.installFromEnv();
+  assert.equal(gone.removed, true);
+  assert.equal(branding.source('mark'), 'bundled', 'and the bundled mark comes back');
+});
+
+test('the app says which commit it is running', async () => {
+  /*
+   * Days were spent on a deployment that had not picked up any of the work
+   * pushed for it, with nobody able to tell from the outside: the screens
+   * looked the same, so the code was assumed to be the same. The platform
+   * hands the container the commit it built, so the application says so —
+   * under the person's name in the sidebar, and on the health check.
+   */
+  const config = require('../src/config');
+  const health = await fetch(`${h.base}/api/health`).then((r) => r.json());
+  assert.ok('release' in health, 'the health check reports the commit');
+  assert.equal(health.release, config.release);
+
+  const me = await admin.get('/api/auth/me');
+  assert.equal(me.release, config.release, 'and every signed-in screen is told');
+
+  const shell = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+  assert.match(shell, /APP\.release/, 'and the sidebar shows it');
+
+  // Where the platform says nothing, nothing is claimed.
+  assert.ok(config.release === null || /^[0-9a-f]{7}$/.test(config.release));
+});
+
+test('the version is readable without signing in', async () => {
+  /*
+   * Which version is live turned out to be the hardest question to answer about
+   * this system: a stale deployment looks exactly like a current one. Answering
+   * it should not need a password, or a laptop — it is in the corner of the
+   * sign-in page, and on the open endpoint that page reads.
+   */
+  const config = require('../src/config');
+  const look = await fetch(`${h.base}/api/auth/look`).then((r) => r.json());
+  assert.ok('release' in look, 'the sign-in page is told');
+  assert.equal(look.release, config.release);
+
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+  assert.match(app, /class="build-badge"/, 'and it puts it on the page');
 });

@@ -102,20 +102,21 @@ slots — the badge on its own and the badge with the wordmark — and **either 
 so one upload is enough. Replacing it changes every one of those at once, because the URL carries a
 fingerprint of the file.
 
-It is uploaded rather than committed on purpose: a logo is a fact about the company, like its address
-or its TRN. **With nothing uploaded the placeholder is plain type — `AKR / LOGO NOT SET` — not a
-drawing of anybody's mark.** An earlier version of this system shipped an approximation of the
-company's own logo, which is the one thing it must never do: an approximation printed as though it
-were the logo is worse than no logo at all.
+**The mark ships with the code**, drawn as SVG in `public/assets`, so the ERP is branded on the first
+run with nothing uploaded and no volume mounted. It is a rendition of the company's eagle, and every
+one of those files says so in its own comment. Upload the real artwork and it takes over everywhere
+at once; until then the drawing is what prints, which is the honest trade for the alternative — a
+blank letterhead on every release until somebody finds the file.
 
 **Paste it, or drop it.** The artwork is usually already in somebody's hand — in a message, on the
 website, in a letterhead they have open. Copy it, click the box on the Logo tab and press Ctrl+V;
 a file dragged onto the box works too. Finding the file and picking it out of a dialog on a phone is
 the step where this most often fails.
 
-**With nothing uploaded, a printed document carries no logo at all** — not a placeholder. It goes to
-a client, and the company's name, address and TRN are already on it in type; a box announcing that
-the logo is missing is worse than a letterhead without one. The watermark is skipped too.
+**What must never print is a box announcing that the logo is missing.** A quotation goes to a client,
+and the company's name, address and TRN are already on it in type — a complaint about the branding is
+worse than a plain letterhead. So there are two states and no third: the company's uploaded artwork,
+or the bundled drawing of the mark.
 
 **Or take it from the company's own website.** Paste `https://www.akr365.com/` into the Logo tab and
 the server fetches it: given a site it looks for the artwork the way a browser would — the
@@ -124,9 +125,24 @@ itself a logo — and given the address of a picture it takes that. The bytes ar
 anything is kept, so a page that serves an error under an image's name is refused. It is the server
 that fetches, because it is the one with a plain route to the internet.
 
+**Or give it to the deployment instead of uploading it.** An upload is written beside the database,
+so on a service with no volume mounted it is inside the container the platform rebuilds on every
+deploy — the logo goes in on Monday and is the bundled drawing again on Tuesday. A platform holds
+its environment variables outside the container, so a logo set there comes back on every start. Set
+**one** of these on the service and redeploy:
+
+| Variable | What to put in it |
+| --- | --- |
+| `COMPANY_LOGO_URL` | A link to the artwork, or to a page it is on — the server looks for it the way a browser would. |
+| `COMPANY_LOGO_DATA` | The file itself: SVG markup pasted straight in, base64, or a `data:` URI. |
+
+Neither overwrites artwork somebody uploaded by hand — that is a deliberate act by a person and
+outranks a setting. A file that will not load is reported in the log and on `/api/health`, and the
+bundled mark is used instead; a logo is never allowed to stop the books opening.
+
 **Uploaded artwork lives where the database lives.** With a volume mounted it survives a deploy;
 without one it is written inside the container Railway replaces on each deploy, so a logo uploaded
-on Monday is the placeholder again on Tuesday. The Logo tab says so in red when that is the case,
+on Monday is the bundled drawing again on Tuesday. The Logo tab says so in red when that is the case,
 and `/api/health` reports `uploads: volume | ephemeral`.
 
 Two things decide whether it *looks* right:
@@ -533,6 +549,30 @@ freight in), a **client's** account (a site visit, testing for their job), or to
 overheads: rent, salaries, the trade licence. The picker on the expense form says so in those words,
 and the expense list can be filtered by the account carrying it.
 
+**The job is chosen by its LPO number**, in one box, because that is the number on the paper in
+somebody's hand:
+
+```
+Against the job — LPO no.
+  Our LPOs — out to the manufacturers    AKR · AKR-FD26-001 — Al Manar Steel Fabrication L.L.C
+  Clients' LPOs — in to us               AKR · ASC/LPO/2026/0912 — Al Sahra Contracting L.L.C
+  Jobs with no LPO on them yet           AKR · AKR-RFQ-092026-004 — Gulf Valve Manufacturing
+```
+
+Money is spent against both — clearing, freight and inspection on our order to a maker; a site
+visit, testing or transport on the client's order to us — and whoever is booking it has one number
+in front of them without caring which way it points. Choose it and both the other fields are filled
+in: the **account** carries the cost on the profit page, and the **enquiry** puts it on the job,
+where it shows in that job's cost alongside the goods. Either can still be overridden by hand, and a
+hand-chosen one is left alone. An expense belongs to one order, never both, and the server refuses
+the pair.
+
+**Every LPO the ERP has issued or taken in is in that list**, all six companies, nothing filtered
+away — the money does not respect the boundary, and one company clears a shipment for an order
+another raised. Each line carries the company it belongs to, and the company being booked to is
+listed first because that is the common case. The expense search matches LPO numbers on both sides,
+so the number on the paper in front of you finds the entry.
+
 The general overheads are then **spread across the accounts pro rata**, on what each client was
 invoiced and on what each manufacturer billed us, so a per-account figure means something. The
 tables show it either way: as entered — the pot as its own row — or spread, one link either way.
@@ -724,11 +764,11 @@ would hide them.
 The falcon is ghosted behind every printed page at four to five per cent — enough to tint the paper,
 not enough to compete with a line of text, and repeated on each sheet of a document that runs long.
 
-**Upload the company's own artwork under Masters → Logo.** A logo is a fact about the company, not
-source code, so it is stored beside the database rather than committed and deployed: whatever is
-uploaded goes on the sidebar, the sign-in page, the head of every printed document and the watermark
-behind them, at once and with no redeploy. SVG is sharpest; a PNG with a transparent background works
-just as well. The drawn placeholder in `public/assets` is only what shows until then.
+**Upload the company's own artwork under Masters → Logo.** Whatever is uploaded goes on the sidebar,
+the sign-in page, the head of every printed document and the watermark behind them, at once and with
+no redeploy. SVG is sharpest; a PNG with a transparent background works just as well. Until then the
+mark drawn in `public/assets` is what shows — a rendition of the company's eagle, shipped so nothing
+goes out unbranded.
 
 ## How the code is laid out
 

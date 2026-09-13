@@ -395,12 +395,20 @@
         ${data.ephemeral ? `<div class="alert danger"><b>Anything uploaded here will be lost on the
           next deploy.</b> No storage volume is mounted, so the artwork is written inside the
           container Railway replaces each time the app is deployed — which is why an uploaded logo
-          can turn back into the placeholder on its own. Mount a volume on the service (Railway →
-          the service → Variables/Volumes) and upload it again; the database has the same
-          problem until you do.</div>` : ''}
-        <div class="card-sub">Upload the company's own artwork. It replaces the drawn placeholder
-          everywhere at once — the sidebar, the sign-in page, the head of every printed document,
-          the watermark ghosted behind them, and the browser tab. <b>An SVG is best</b>: it is a
+          can turn back into the bundled drawing on its own. The database has the same problem, so
+          the real fix is a volume: Railway → the service → Variables/Volumes → <b>+ Volume</b>,
+          mounted at <b>/data</b>.
+          <br><br><b>Or give the logo to the deployment instead of uploading it.</b> Railway holds
+          its variables outside the container, so a logo set there comes back on every deploy with
+          no volume at all. On the service → Variables, add <b>one</b> of these and redeploy:
+          <br>· <b>COMPANY_LOGO_URL</b> — a link to the artwork, or to a page it is on
+          <br>· <b>COMPANY_LOGO_DATA</b> — the file itself: SVG markup, base64, or a data: URI
+          <br>Neither overwrites what you upload here by hand.</div>` : ''}
+        <div class="card-sub">The ERP ships with the AKR eagle drawn in the source, so the mark is
+          on every screen and every printed page from the first run. It is a rendition, not the
+          artwork file — upload the real one here and it takes over everywhere at once: the
+          sidebar, the sign-in page, the head of every printed document, the watermark ghosted
+          behind them, and the browser tab. <b>An SVG is best</b>: it is a
           drawing rather than a grid of pixels, so it is sharp at 44 pixels in the sidebar and at
           full size on a letterhead alike. A PNG works, at 480 pixels or more on its longer side.
           <b>A transparent background is worth asking for</b> — artwork with a solid background of
@@ -417,7 +425,7 @@
                      ${Math.max(1, Math.round((s.size_bytes || 0) / 1024))} KB${
                        s.vector ? ' · vector, sharp at any size'
                          : (s.width ? ` · ${s.width} × ${s.height}` : '')}`
-                  : 'the drawn placeholder'}</span>
+                  : 'the bundled drawing — upload the real artwork'}</span>
                 ${isAdmin ? `<span class="btn-row">
                   <label class="btn ghost sm" style="cursor:pointer;margin:0">Upload
                     <input type="file" hidden data-slot="${esc(s.slot)}"
@@ -560,7 +568,7 @@
     });
 
     pane.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', async () => {
-      const sure = await UI.confirm('Go back to the plain placeholder?', { danger: true });
+      const sure = await UI.confirm('Go back to the bundled drawing of the mark?', { danger: true });
       if (!sure) return;
       await API.del(`/api/masters/branding/${b.dataset.clear}`);
       UI.ok('Reverted.');

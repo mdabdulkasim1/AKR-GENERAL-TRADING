@@ -343,8 +343,11 @@
           { label: 'Head', key: 'category_name' },
           { label: 'Description', render: (r) => `<b>${esc(r.description)}</b>
               <div class="muted small">${esc([r.payee, r.project].filter(Boolean).join(' · '))}</div>` },
-          { label: 'Job', render: (r) => (r.enquiry_no
-            ? `<span class="mono small">${esc(r.enquiry_no)}</span>` : '—') },
+          { label: 'Against', render: (r) => (r.order_ref || r.enquiry_no
+            ? `${r.order_ref ? `<span class="mono small">${esc(r.order_ref)}</span>
+                 <div class="muted small">${r.order_side === 'client' ? "client's LPO" : 'our LPO'}</div>` : ''}${
+              r.enquiry_no ? `<div class="muted small mono">${esc(r.enquiry_no)}</div>` : ''}`
+            : '—') },
           { label: 'Booked to', render: (r) => (r.partner_name
             ? `${esc(r.partner_name)}<div class="muted small">${
               r.partner_type === 'client' ? 'client' : 'manufacturer'}</div>`
@@ -465,17 +468,25 @@
             ].filter((g) => g.options.length) })}
           ${UI.field({ name: 'project', label: 'Project', value: existing ? existing.project || '' : '' })}
         </div>
-        ${UI.field({ name: 'enquiry_id', label: 'Against the job', blank: 'Not against one job',
-          value: existing ? existing.enquiry_id : '',
-          hint: 'The enquiry it belongs to. It then shows as a cost of that job on the order.',
-          options: [
-            { label: "Clients' enquiries", options: jobs.filter((e) => e.side === 'client')
-              .map((e) => ({ value: e.id,
-                label: `${e.enquiry_no} — ${e.partner_name || e.client_name || ''} ${e.subject || ''}`.trim() })) },
-            { label: 'Ours to the makers', options: jobs.filter((e) => e.side === 'supplier')
-              .map((e) => ({ value: e.id,
-                label: `${e.enquiry_no} — ${e.partner_name || e.client_name || ''} ${e.subject || ''}`.trim() })) },
-          ].filter((g) => g.options.length) })}
+        ${/*
+          One selector, not two.
+          
+          A cost is booked against the job, and the number a person has in front
+          of them for that job is the LPO — ours to the maker or the client's to
+          us. Two boxes asked them to know which of the two the paper in their
+          hand was, and to find the enquiry number for it. So it is one list:
+          every LPO the ERP has issued or taken in, and beneath them the jobs
+          that have no LPO on them yet.
+        */ ''}
+        ${UI.field({ name: 'against', label: 'Against the job — LPO no.',
+          blank: 'Not against one job',
+          value: existing ? (existing.po_id ? `po:${existing.po_id}`
+            : (existing.so_id ? `so:${existing.so_id}`
+              : (existing.enquiry_id ? `enq:${existing.enquiry_id}` : ''))) : '',
+          hint: 'Every LPO, both ways and all six companies — ours out to the manufacturers and '
+            + 'the clients\' in to us. Choosing one books the cost to that account and shows it '
+            + 'as a cost of that job.',
+          options: [] })}
         <div class="grid g3">
           ${UI.field({ name: 'amount', label: 'Amount (before VAT)', type: 'number', step: '0.01',
             required: true, value: existing ? existing.amount : '' })}
@@ -501,7 +512,97 @@
       footer: `<button class="btn ghost" data-act="__close">Cancel</button>
         ${existing && APP.can(['accounts']) ? '<button class="btn danger" data-act="delete">Delete</button>' : ''}
         <button class="btn" data-act="save">${existing ? 'Save' : 'Book it'}</button>`,
-      onMount(modal) {
+      async onMount(modal) {
+        /*
+         * The LPOs of the company this is being booked to.
+         *
+         * Loaded per company rather than all at once: six companies' orders in
+         * one list is a list nobody can find anything in, and an expense booked
+         * to one company against another company's order is a mistake the books
+         * would carry quietly. Change the company and the list follows.
+         */
+        const companyEl = modal.querySelector('[name=company_id]');
+        const poEl = modal.querySelector('[name=against]');
+        const partnerEl = modal.querySelector('[name=partner_id]');
+        let lpos = [];
+
+        /*
+         * Every LPO the ERP has issued or taken in — both directions, all six
+         * companies, nothing filtered away.
+         *
+         * The money does not respect the boundary: one company clears a
+         * shipment for an order another company raised, and the person booking
+         * it has one number in front of them. So the whole book is offered and
+         * each line carries the company it belongs to. The company being booked
+         * to is simply listed first, because that is the common case.
+         */
+        const render = () => {
+          const keep = poEl.value;
+          const here = String(companyEl.value || '');
+          const order = (a, b) => {
+            const mine = (o) => (String(o.company_id) === here ? 0 : 1);
+            return mine(a) - mine(b) || String(b.ref).localeCompare(String(a.ref));
+          };
+          const group = (label, side) => {
+            const rows = lpos.filter((o) => o.side === side).sort(order);
+            if (!rows.length) return '';
+            return `<optgroup label="${label}">${rows.map((o) => `<option value="${o.key}">${
+              UI.esc(`${o.company_code ? `${o.company_code} · ` : ''}${o.ref} — ${o.party || ''}${
+                o.project ? ` · ${o.project}` : ''}`.trim())
+            }</option>`).join('')}</optgroup>`;
+          };
+          poEl.innerHTML = '<option value="">Not against one job</option>'
+            + group('Our LPOs — out to the manufacturers', 'ours')
+            + group("Clients' LPOs — in to us", 'client')
+            + group('Jobs with no LPO on them yet', 'enquiry');
+          if (keep && lpos.some((o) => o.key === keep)) poEl.value = keep;
+        };
+
+        const loadLpos = async () => {
+          poEl.disabled = true;
+          const qs = API.qs({ limit: 500 });
+          const [ours, theirs] = await Promise.all([
+            API.get(`/api/purchase/orders${qs}`).catch(() => ({ rows: [] })),
+            API.get(`/api/sales/orders${qs}`).catch(() => ({ rows: [] })),
+          ]);
+          const onAnLpo = new Set([...ours.rows, ...theirs.rows]
+            .map((o) => o.enquiry_id).filter(Boolean));
+          lpos = [
+            ...ours.rows.filter((o) => o.status !== 'cancelled').map((o) => ({
+              key: `po:${o.id}`, ref: o.lpo_no, party: o.supplier_name,
+              project: o.project, partner_id: o.partner_id, enquiry_id: o.enquiry_id,
+              company_id: o.company_id, company_code: o.company_code, side: 'ours',
+            })),
+            ...theirs.rows.filter((o) => o.status !== 'cancelled').map((o) => ({
+              key: `so:${o.id}`, ref: o.client_lpo_no || o.so_no, party: o.client_name,
+              project: o.project, partner_id: o.partner_id, enquiry_id: o.enquiry_id,
+              company_id: o.company_id, company_code: o.company_code, side: 'client',
+            })),
+            // A job can be costed before anybody has raised an order on it —
+            // an inspection during the enquiry, a sample shipped in. Those jobs
+            // have no LPO number yet, so they are listed under their own.
+            ...jobs.filter((e) => !onAnLpo.has(e.id)).map((e) => ({
+              key: `enq:${e.id}`, ref: e.enquiry_no,
+              party: e.partner_name || e.client_name, project: e.subject,
+              partner_id: e.partner_id, enquiry_id: e.id,
+              company_id: e.company_id, company_code: e.company_code, side: 'enquiry',
+            })),
+          ];
+          render();
+          poEl.disabled = false;
+        };
+
+        // Choosing an LPO fills in the account and the job it belongs to —
+        // unless somebody has already chosen those for themselves.
+        poEl.addEventListener('change', () => {
+          const chosen = lpos.find((o) => o.key === poEl.value);
+          if (!chosen) return;
+          if (partnerEl && !partnerEl.value) partnerEl.value = chosen.partner_id || '';
+        });
+        // The whole book is already loaded; changing the company only reorders it.
+        companyEl.addEventListener('change', render);
+        await loadLpos();
+
         // Fill in the standard VAT once an amount is typed, so nobody has to
         // reach for a calculator — it is still editable.
         const amount = modal.querySelector('[name=amount]');
@@ -525,6 +626,14 @@
         const form = modal.querySelector('#x-form');
         if (!form.reportValidity()) return 'keep';
         const values = UI.formValues(form);
+        // One picker on the screen, two columns in the book: an expense belongs
+        // to our order or to the client's, and the server is told which.
+        const picked = String(values.against || '');
+        delete values.against;
+        values.po_id = picked.startsWith('po:') ? picked.slice(3) : '';
+        values.so_id = picked.startsWith('so:') ? picked.slice(3) : '';
+        // An LPO carries its own job; an enquiry chosen on its own is the job.
+        values.enquiry_id = picked.startsWith('enq:') ? picked.slice(4) : '';
         const box = form.querySelector('[name=recoverable_vat]');
         if (box) values.recoverable_vat = box.checked;
         if (existing) await API.patch(`/api/accounts/expenses/${existing.id}`, values);

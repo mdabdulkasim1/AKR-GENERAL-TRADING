@@ -5,7 +5,12 @@ const config = require('./config');
 const { db } = require('./db');
 const auth = require('./lib/auth');
 const { ApiError } = require('./lib/http');
-const { shellHtml } = require('./lib/shell');
+const shell = require('./lib/shell');
+const { shellHtml } = shell;
+const branding = require('./services/branding');
+
+// Where the front end is served from — named before the health check reads it.
+const publicDir = path.join(__dirname, '..', 'public');
 
 const app = express();
 app.disable('x-powered-by');
@@ -52,6 +57,25 @@ app.get('/api/health', (_req, res) => {
     storage: config.dbIsEphemeral ? 'ephemeral' : (config.volumePath ? 'volume' : 'local'),
     // The logo and the attachments live wherever the database does.
     uploads: config.volumePath ? 'volume' : (config.isProd ? 'ephemeral' : 'local'),
+    /*
+     * Which build is actually running, and what it is showing as the logo.
+     *
+     * "The logo is still not there" has three possible causes and they are not
+     * distinguishable from a screenshot: the deploy has not happened, a browser
+     * is holding a cached copy of the old file, or something has been uploaded
+     * that overrides the artwork in the build. This says which — from outside,
+     * on an endpoint anybody can open, without a sign-in.
+     */
+    build: shell.buildStamp(publicDir),
+    // The commit the platform built, where it tells us. This is the one that
+    // settles "is the running code current".
+    release: config.release,
+    branch: config.releaseBranch,
+    branding: {
+      mark: branding.source('mark'),
+      markUrl: branding.urlFor('mark'),
+      fullUrl: branding.urlFor('full'),
+    },
   });
 });
 
@@ -73,7 +97,6 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/admin', require('./routes/admin'));
 
 // --------------------------------------------------------------- static + SPA
-const publicDir = path.join(config.root, 'public');
 app.use(express.static(publicDir, { index: false, maxAge: config.isProd ? '1h' : 0 }));
 
 // The shell is read fresh in development so an edit shows on reload, and read
@@ -188,6 +211,24 @@ if (require.main === module) {
       console.log('');
     }
   });
+  /*
+   * The artwork given to the deployment, installed before anybody signs in.
+   *
+   * Not awaited by the listen: a logo that is slow to fetch, or that fails
+   * altogether, must not hold up or bring down the books. What it did is said
+   * once, in the log, and reported on the health check.
+   */
+  branding.installFromEnv().then((result) => {
+    if (!result || result.skipped) return;
+    if (result.error) {
+      console.warn(`  ⚠ ${result.source} did not load: ${result.error}`);
+      console.warn('    The mark that ships with the app is being used instead.\n');
+    } else {
+      console.log(`  ▸ Logo:        installed from ${result.source}`
+        + (result.taken_from ? ` (${result.taken_from})` : '') + '\n');
+    }
+  });
+
   startBackgroundJobs();
 
   for (const signal of ['SIGINT', 'SIGTERM']) {

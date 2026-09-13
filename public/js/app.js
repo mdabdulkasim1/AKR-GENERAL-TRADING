@@ -178,12 +178,16 @@
   // ------------------------------------------------------------------ login
   async function renderLogin() {
     if (window.UI && UI.closeAllModals) UI.closeAllModals();
+    let release = null;
     try {
       const look = await API.get('/api/auth/look');
       loginPlate = look.logoPlate !== false;
+      release = look.release || null;
     } catch { /* the placeholder wants its plate */ }
     document.getElementById('root').innerHTML = `
       <div class="login-shell">
+        ${release ? `<div class="build-badge" title="The commit this deployment is running">${
+          UI.esc(release)}</div>` : ''}
         <div class="login-hero">
           <img class="logo-full${loginPlate ? '' : ' plain'}" src="${LOGO_FULL}"
                alt="AKR General Trading L.L.C"
@@ -271,7 +275,9 @@
           <nav class="nav" id="nav"></nav>
           <div class="sidebar-foot">
             <div class="who">${UI.esc(APP.user.name)}</div>
-            <div class="role">${UI.esc(roleLabel(APP.user.role))}</div>
+            <div class="role">${UI.esc(roleLabel(APP.user.role))}${APP.release
+              ? ` · <span class="rel" title="The commit this deployment is running">${
+                UI.esc(APP.release)}</span>` : ''}</div>
             <div class="btn-row" style="margin-top:9px">
               <button id="my-account" style="flex:1">My account</button>
               <button id="logout" style="flex:1">Sign out</button>
@@ -291,6 +297,15 @@
               🔔<span class="dot" id="bell-count" hidden></span>
             </button>
           </header>
+          ${APP.storage === 'ephemeral' && APP.user.role === 'admin' ? `
+            <div class="storage-warning">
+              <b>This system is not keeping your data.</b> No storage volume is mounted, so the
+              database sits inside the container the platform rebuilds on every deploy — every
+              invoice, payment, stock movement and uploaded logo is destroyed the next time the app
+              is deployed. Fix it in Railway: open the service → <b>Variables / Volumes</b> →
+              <b>+ Volume</b>, mount it at <b>/data</b>. The database moves there by itself on the
+              next start, and this message goes away.
+            </div>` : ''}
           <div class="content" id="view">${UI.loading()}</div>
         </div>
       </div>

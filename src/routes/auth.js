@@ -30,10 +30,15 @@ function context(user) {
       website: company.website, currency: company.currency, vatPercent: company.vat_percent,
       // Whatever the company has uploaded, falling back to the bundled file.
       logo: branding.urlFor('mark'), logoFull: branding.urlFor('full'),
-      // Whether real artwork has been uploaded at all. A printed document with
-      // no logo should carry the company's name in type — never a placeholder
-      // announcing that the logo is missing, on a page a client will read.
-      logoSet: Boolean(branding.resolve('mark')),
+      // Whether there is artwork to print. There always is now: the company's
+      // mark ships in public/assets, so a document carries it on the first run
+      // with nothing uploaded and no volume mounted. What must never reach a
+      // client's desk is a placeholder announcing that the logo is missing,
+      // which is what this flag was guarding against.
+      logoSet: true,
+      // Whether that artwork is the company's own file or the bundled
+      // rendition of it. The Logo screen says which; nothing else needs to.
+      logoUploaded: Boolean(branding.resolve('mark')),
       // Whether to put a light plate behind it — see services/branding.js.
       logoPlate: branding.settings().plate,
       bankName: company.bank_name, bankAccount: company.bank_account, iban: company.iban, swift: company.swift,
@@ -45,6 +50,18 @@ function context(user) {
     currency: config.vat.currency,
     currencySymbol: config.vat.currencySymbol,
     vatPercent: config.vat.percent,
+    /*
+     * Whether the books survive the next deploy.
+     *
+     * This has been a warning in the server's console since the beginning, and
+     * nobody reads a container's console. It belongs where the person who can
+     * fix it will see it, which is on their screen, every day, until it is
+     * fixed — losing a month of invoices to a deploy is not a thing to find
+     * out afterwards.
+     */
+    storage: config.dbIsEphemeral ? 'ephemeral' : (config.volumePath ? 'volume' : 'local'),
+    // The commit running, shown in the sidebar — see config.js for why.
+    release: config.release,
     permissions: {
       seesPrices: auth.seesPrices(user),
       seesMoney: auth.seesMoney(user),
@@ -62,7 +79,17 @@ function context(user) {
  * the letterhead, which is public by nature.
  */
 router.get('/look', wrap(async (_req, res) => {
-  res.json({ logoPlate: branding.settings().plate });
+  res.json({
+    logoPlate: branding.settings().plate,
+    /*
+     * The commit running, before anybody has signed in.
+     *
+     * Which version is live turned out to be the hardest question to answer
+     * about this system, and answering it should not require a password on a
+     * phone. It is on the sign-in page, in the corner.
+     */
+    release: config.release,
+  });
 }));
 
 router.post('/login', wrap(async (req, res) => {
