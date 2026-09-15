@@ -16,7 +16,8 @@
     "db:reset": "node src/db/reset.js",
     "setup": "npm run db:migrate && npm run db:seed",
     "demo": "node scripts/demo-walkthrough.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "fresh": "node src/db/fresh.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

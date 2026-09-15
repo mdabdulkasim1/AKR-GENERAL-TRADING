@@ -70,6 +70,29 @@ district cooling or irrigation — and 5% UAE VAT. Payment terms are chosen per 
 the company keeps, and they decide the advance an order waits for, the cheque the driver collects at
 the gate, and the due date on the invoice.
 
+## Going live — clearing the demo data
+
+A new installation is seeded with something to look at: fictional clients and manufacturers, a
+catalogue of invented part numbers, and whatever gets entered while the system is being tried.
+Before real trading starts, clear it:
+
+```bash
+npm run fresh                 # says what each choice would remove, and stops
+npm run fresh -- --books      # empty the books, keep every master
+npm run fresh -- --all        # the books, and the sample accounts and catalogue
+```
+
+On Railway, run it from the service's **Console** tab.
+
+**The setup is never touched** — the group companies, the desks and who may open what, the payment
+terms, the applications, the product groups, the expense heads and the terms & conditions library
+all survive, because somebody configured those on purpose and clearing them means doing the work
+again. Document numbering starts back at 001, and **the database file is copied beside itself before
+anything is deleted**, so a wrong choice is recoverable.
+
+Clearing the books leaves the desks in place, which matters: the application seeds itself only when
+it finds no accounts at all, so going live does not undo itself on the next restart.
+
 ## Quick start
 
 ```bash
