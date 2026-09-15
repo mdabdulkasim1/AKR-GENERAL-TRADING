@@ -98,17 +98,15 @@ prints the password under them is a convenience for a demonstration and a gift t
 
 ### The company's own mark
 
-Upload it once under **Masters → Logo** and it is everywhere: the sidebar, the sign-in page, the
-letterhead on every printed document, the watermark behind them, and the browser tab. There are two
-slots — the badge on its own and the badge with the wordmark — and **either stands in for the other**,
-so one upload is enough.
+Upload it once under **Masters → Logo** and it is on the sidebar, the sign-in page and the browser
+tab. There are two slots — the badge on its own and the badge with the wordmark — and **either
+stands in for the other**, so one upload is enough.
 
-**The two slots are not interchangeable on paper, though.** A letterhead takes the **lock-up**, which
-is the artwork anybody hands you when you ask for "the logo for our letterhead" — the mark with the
-company's name set beside it. The **badge** goes in the sidebar, the browser tab and the watermark,
-because a wide lock-up ghosted across a page is not a watermark. Upload the lock-up into the second
-slot and the printed head also stops setting the company's name in type beside it: the name is
-already in the picture, and printing it twice is how a letterhead comes to look like a mistake. Replacing it changes every one of those at once, because the URL carries a
+**Nothing printed carries it.** The company prints its documents on its own headed paper, so
+artwork from the system would land on top of a letterhead that already has it, and a logo
+reproduced from a screen file rarely matches the printer's. The printed head is the company's name,
+the address and the TRN — what a tax invoice is required to show and what the pre-printed sheet does
+not supply — and nothing is ghosted behind the page. Replacing it changes every one of those at once, because the URL carries a
 fingerprint of the file.
 
 **The mark ships with the code**, drawn as SVG in `public/assets`, so the ERP is branded on the first
@@ -774,8 +772,8 @@ The falcon is ghosted behind every printed page at four to five per cent — eno
 not enough to compete with a line of text, and repeated on each sheet of a document that runs long.
 
 **Upload the company's own artwork under Masters → Logo.** Whatever is uploaded goes on the sidebar,
-the sign-in page, the head of every printed document and the watermark behind them, at once and with
-no redeploy. SVG is sharpest; a PNG with a transparent background works just as well. Until then the
+the sign-in page and the browser tab, at once and with no redeploy. Printed documents carry no logo
+at all — see above. SVG is sharpest; a PNG with a transparent background works just as well. Until then the
 mark drawn in `public/assets` is what shows — a rendition of the company's eagle, shipped so nothing
 goes out unbranded.
 

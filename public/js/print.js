@@ -29,7 +29,7 @@
     if (!w) return UI.err('Allow pop-ups to print this document.');
     w.document.open();
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>`
-      + styles() + `</head><body>${watermark()}${bodyHtml}</body></html>`);
+      + styles() + `</head><body>${bodyHtml}</body></html>`);
     w.document.close();
     const go = () => { try { w.focus(); w.print(); } catch { /* window closed */ } };
     if (w.document.readyState === 'complete') setTimeout(go, 80);
@@ -46,25 +46,6 @@
     return `<style>
       @page { size: A4 portrait; margin: 12mm 12mm 16mm; }
 
-      /*
-       * The company's mark, ghosted behind the page.
-       *
-       * Fixed rather than absolute, so the browser repeats it on every sheet of
-       * a document that runs to several pages; painted over the content rather
-       * than under it, because the sheet draws its own white page and anything
-       * beneath would simply be hidden; and at four to five per cent it tints
-       * the paper without competing with a single line of text.
-       */
-      .watermark {
-        position: fixed; inset: 0; z-index: 9999; pointer-events: none;
-        display: flex; align-items: center; justify-content: center;
-      }
-      .watermark img {
-        width: 58%; max-width: 125mm; opacity: .055;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-      }
-      /* Ink is dearer than pixels, and paper shows a tint more readily. */
-      @media print { .watermark img { opacity: .04; } }
       body {
         margin: 0; color: #16232B; background: #EEF2F5;
         font: 10.5px/1.45 "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
@@ -76,25 +57,6 @@
 
       .head { display: flex; align-items: flex-start; gap: 14px; border-bottom: 2px solid #0E3A5C; padding-bottom: 9px; }
       /* Contained, never stretched: a logo squashed to fit is not the logo. */
-      /*
-       * Sized by its height, not boxed to a square.
-       *
-       * A letterhead lock-up is wide — a badge with the company's name beside
-       * it — and a fixed square slot shrinks it to a stamp. So the height is
-       * what is fixed and the width follows the artwork, up to a third of the
-       * page; a square badge comes out square, a wide lock-up comes out wide.
-       */
-      .head .logo { flex: 0 0 auto; max-width: 215px; display: flex; align-items: center; }
-      /*
-       * The height is set, the width follows the artwork.
-       *
-       * Not max-height alone: an SVG carries no intrinsic size of its own, so
-       * in a flex row it collapses to nothing and the letterhead prints with a
-       * blank where the logo should be. Giving it a height makes the width
-       * follow the aspect ratio, and a square badge and a wide lock-up both
-       * come out at their own proportions.
-       */
-      .head .logo img { height: 56px; width: auto; max-width: 215px; object-fit: contain; }
       .head .who { flex: 1; }
       .head .who .name { font: 700 17px Georgia, "Times New Roman", serif; color: #0E3A5C; letter-spacing: .4px; }
       .head .who .tag { font-size: 8px; letter-spacing: 1.6px; text-transform: uppercase; color: #14663F; margin-top: 2px; font-weight: 600; }
@@ -193,48 +155,24 @@
   }
 
   // ------------------------------------------------------------- fragments
-  /** The mark, laid faintly behind whatever is printed. */
-  const hasLogo = () => Boolean(window.APP && APP.company && APP.company.logoSet);
-  const co = () => (window.APP && APP.company) || {};
   /*
-   * Two slots, and a letterhead wants the other one.
+   * Nothing printed carries the logo.
    *
-   * The badge on its own is right in a sidebar, in a browser tab and ghosted
-   * behind a page. The head of a printed document is where a company puts its
-   * full lock-up — the mark with its name beside it — which is the artwork
-   * anybody hands you when you ask for "the logo for our letterhead". So the
-   * letterhead takes `full` and falls back to the badge; the watermark stays
-   * the badge, because a wide lock-up stretched across a page is not a
-   * watermark.
-   */
-  const markSrc = () => location.origin + (co().logo || '/assets/logo-icon.svg');
-  const logoSrc = () => location.origin + (co().logoFull || co().logo || '/assets/logo.svg');
-
-  /*
-   * No artwork uploaded yet: print nothing rather than a placeholder.
+   * The company prints its documents on its own headed paper, so artwork from
+   * the system would land on top of a letterhead that already has it — and a
+   * logo reproduced from a screen file rarely matches the printer's. The head
+   * here sets the name, the address and the TRN, which is what a tax invoice
+   * must carry and what the pre-printed sheet does not supply.
    *
-   * A document goes to a client. A box on the letterhead announcing that the
-   * logo has not been set is worse than a letterhead with no logo on it, which
-   * is simply a letterhead — the company's name, address and TRN are all there
-   * in type already.
+   * On screen the mark stays where it belongs: the sidebar, the sign-in page
+   * and the browser tab. This is about paper only.
    */
-  const watermark = () => (hasLogo() ? `<div class="watermark"><img src="${markSrc()}" alt=""></div>` : '');
-
   function letterhead(company) {
     const c = company || (window.APP && APP.company) || {};
-    /*
-     * A lock-up carries the company's name in the artwork itself. Setting it
-     * again in type beside it prints the name twice across the top of every
-     * invoice, which is how a letterhead comes to look like a mistake. So where
-     * a full lock-up has been uploaded, the head is the artwork and the address
-     * — the name is already in the picture.
-     */
-    const lockup = hasLogo() && c.logoFullUploaded;
     return `<div class="head">
-      ${hasLogo() ? `<div class="logo"><img src="${logoSrc()}" alt=""></div>` : ''}
       <div class="who">
-        ${lockup ? '' : `<div class="name">${esc(c.name || 'AKR GENERAL TRADING L.L.C')}</div>
-        <div class="tag">${esc((window.APP && APP.tagline) || 'Trusted Trading Partner for Valves, Fittings & Construction Materials')}</div>`}
+        <div class="name">${esc(c.name || 'AKR GENERAL TRADING L.L.C')}</div>
+        <div class="tag">${esc((window.APP && APP.tagline) || 'Trusted Trading Partner for Valves, Fittings & Construction Materials')}</div>
         <div class="addr">${esc(c.address || '')}${c.phone ? ' · T ' + esc(c.phone) : ''}${c.email ? ' · ' + esc(c.email) : ''}${c.website ? ' · ' + esc(c.website) : ''}</div>
       </div>
       <div class="trn">${c.trn ? `<b>TRN ${esc(c.trn)}</b>` : '<b class="stamp-note">TRN not set</b>'}</div>
@@ -627,5 +565,5 @@
     };
   }
 
-  window.PRINT = { openWindow, render, styles, watermark, letterhead, BUILD, DOCS };
+  window.PRINT = { openWindow, render, styles, letterhead, BUILD, DOCS };
 })();

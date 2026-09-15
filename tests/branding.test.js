@@ -113,9 +113,6 @@ test('the artwork is never stretched to fit', () => {
     'rather than squashing it into a square');
   assert.match(css.match(/\.login-hero \.logo-full \{[^}]+\}/)[0], /object-fit: contain/);
 
-  const printer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'print.js'), 'utf8');
-  assert.match(printer.match(/\.head \.logo img \{[^}]+\}/)[0], /object-fit: contain/,
-    'and so does the letterhead');
 });
 
 test('the screen says how big the artwork is, and when it is too small', async () => {
@@ -254,33 +251,30 @@ test('a page that declares no logo says so plainly', async () => {
   }
 });
 
-test('every document is printed on a letterhead, uploaded or not', async () => {
+test('nothing printed carries the logo', async () => {
   /*
-   * A quotation goes to a client, so what goes on it has to be the mark or
-   * nothing at all — never a box announcing that the logo has not been set.
-   * With the artwork bundled there is always a mark to print, so the page is
-   * told so whether or not anything has been uploaded; the Logo screen keeps
-   * the separate question of whose file it is.
+   * The company prints on its own headed paper. Artwork from the system would
+   * land on top of a letterhead that already has it, and a logo reproduced from
+   * a screen file rarely matches the printer's. So the printed head is the name,
+   * the address and the TRN — what a tax invoice must carry and what the
+   * pre-printed sheet does not supply — and nothing is ghosted behind the page.
+   *
+   * On screen the mark stays where it belongs. This is about paper only.
    */
-  for (const slot of ['mark', 'full']) branding.clear(slot);
-  const bare = await admin.get('/api/auth/me');
-  assert.equal(bare.company.logoSet, true, 'there is always a mark to print');
-  assert.equal(bare.company.logoUploaded, false, 'and it is the bundled one');
-  // Fingerprinted, because the static file is cached for an hour in production
-  // and a deploy that changes it must not be defeated by that cache.
-  assert.match(bare.company.logo, /^\/assets\/logo-icon\.svg\?v=[0-9a-f]{10}$/);
-
   const printer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'print.js'), 'utf8');
-  assert.match(printer, /const watermark = \(\) => \(hasLogo\(\)/,
-    'the watermark is only drawn when there is artwork to draw');
-  assert.match(printer, /\$\{hasLogo\(\) \? `<div class="logo">/,
-    'and so is the mark on the letterhead');
+  assert.ok(!/watermark/.test(printer), 'no ghosted mark behind the page');
+  assert.ok(!/\.head \.logo/.test(printer), 'and no picture in the letterhead');
+  assert.ok(!/logoSrc|markSrc|logoFullUploaded/.test(printer),
+    'nothing in the printer reaches for artwork at all');
 
-  await admin.post('/api/masters/branding/mark',
-    { data: PNG.toString('base64'), mime: 'image/png', filename: 'akr.png' });
-  const after = await admin.get('/api/auth/me');
-  assert.equal(after.company.logoUploaded, true, 'the company\'s own file takes over');
-  assert.match(after.company.logo, /^\/api\/branding\/mark\?v=/);
+  // The head still carries what a tax invoice is required to show.
+  assert.match(printer, /<div class="name">/);
+  assert.match(printer, /TRN \$\{esc\(c\.trn\)\}/);
+
+  // And the screen is untouched: the sidebar and the sign-in page still show it.
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+  assert.match(app, /class="mark/, 'the sidebar still wears the mark');
+  assert.match(app, /logo-full/, 'and so does the sign-in page');
 });
 
 test('the health check says which build is running and what it shows', async () => {
@@ -461,45 +455,6 @@ test('the version is readable without signing in', async () => {
 
   const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
   assert.match(app, /class="build-badge"/, 'and it puts it on the page');
-});
-
-test('a letterhead prints the lock-up, and does not set the name twice', async () => {
-  /*
-   * Two slots, and the head of a printed document wants the other one: the
-   * badge is for a sidebar, a browser tab and the watermark, while a letterhead
-   * carries the full lock-up — the artwork anybody hands you when you ask for
-   * "the logo for our letterhead". That artwork has the company's name set into
-   * it, so the name must not then be printed again in type beside it.
-   */
-  for (const slot of ['mark', 'full']) branding.clear(slot);
-  const printer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'print.js'), 'utf8');
-
-  assert.match(printer, /const logoSrc = \(\) => location\.origin \+ \(co\(\)\.logoFull/,
-    'the letterhead takes the lock-up, falling back to the badge');
-  assert.match(printer, /watermark = \(\) => \(hasLogo\(\) \? `<div class="watermark"><img src="\$\{markSrc\(\)\}/,
-    'and the watermark stays the badge — a wide lock-up ghosted across a page is not a watermark');
-  assert.match(printer, /const lockup = hasLogo\(\) && c\.logoFullUploaded;/,
-    'the duplicated name is suppressed only when real lock-up artwork is there');
-  assert.match(printer, /\.head \.logo img \{ height: 56px; width: auto;/,
-    'sized by height so an SVG does not collapse to nothing in a flex row');
-
-  // Nothing in the full slot: the name is still needed in type.
-  const bare = await admin.get('/api/auth/me');
-  assert.equal(bare.company.logoFullUploaded, false);
-
-  // A lock-up uploaded: the page is told, so the head drops the typed name.
-  await admin.post('/api/masters/branding/full',
-    { data: PNG.toString('base64'), mime: 'image/png', filename: 'lockup.png' });
-  const after = await admin.get('/api/auth/me');
-  assert.equal(after.company.logoFullUploaded, true);
-  assert.match(after.company.logoFull, /^\/api\/branding\/full\?v=/);
-
-  // A badge in the mark slot alone never counts as a lock-up.
-  branding.clear('full');
-  await admin.post('/api/masters/branding/mark',
-    { data: PNG.toString('base64'), mime: 'image/png', filename: 'badge.png' });
-  assert.equal((await admin.get('/api/auth/me')).company.logoFullUploaded, false,
-    'the badge standing in for the lock-up keeps the name in type');
 });
 
 test('the sign-in page does not advertise who works here, or the password', async () => {
