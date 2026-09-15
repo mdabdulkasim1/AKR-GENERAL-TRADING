@@ -210,22 +210,12 @@
             <h2>Sign in</h2>
             <div class="muted mb">Use your work email or your employee code.</div>
             <form id="login-form">
-              ${UI.field({ name: 'username', label: 'Email or staff code', required: true, placeholder: 'sales@akr365.com' })}
+              ${UI.field({ name: 'username', label: 'Email or staff code', required: true,
+                placeholder: 'name@akr365.com' })}
               ${UI.password({ name: 'password', label: 'Password', required: true })}
               <button class="btn block mt" type="submit">Sign in</button>
             </form>
             <div id="login-error"></div>
-            <div class="demo-accounts">
-              <h4>Desks in this system</h4>
-              <div class="demo-grid">
-                ${[['admin@akr365.com', 'Administrator'], ['kam@akr365.com', 'Key Account Manager'],
-                   ['accounts@akr365.com', 'Accounts'], ['sales@akr365.com', 'Sales Officer'],
-                   ['logistics@akr365.com', 'Logistics']]
-                  .map(([email, role]) => `<button data-email="${UI.esc(email)}"><b>${UI.esc(role)}</b>${UI.esc(email)}</button>`).join('')}
-              </div>
-              <div class="muted small mt">Starter password <code>akr@2026</code> — change every one of
-                them before this touches real trading data.</div>
-            </div>
           </div>
         </div>
       </div>`;
@@ -250,13 +240,6 @@
         btn.disabled = false;
         btn.textContent = 'Sign in';
       }
-    });
-
-    document.querySelectorAll('.demo-grid button').forEach((b) => {
-      b.addEventListener('click', () => {
-        form.querySelector('[name=username]').value = b.dataset.email;
-        form.querySelector('[name=password]').focus();
-      });
     });
   }
 

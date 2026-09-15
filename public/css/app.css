@@ -403,7 +403,16 @@ ol.conditions li { margin-bottom: 3px; }
 
 .login-shell { display: flex; min-height: 100vh; position: relative; }
 .login-hero {
-  flex: 1.15; background: linear-gradient(155deg, var(--navy) 0%, var(--navy-dark) 55%, #0B3D2A 100%);
+  /*
+   * A basis, not just a share.
+   *
+   * With flex-basis at 0 the panel beside it can win the whole row on some
+   * widths and the hero collapses to a stripe — the company's mark and the
+   * name of the system gone from the page people sign in on. A real basis
+   * keeps it; below 820px the two stack instead.
+   */
+  flex: 1.15 1 420px; min-width: 0;
+  background: linear-gradient(155deg, var(--navy) 0%, var(--navy-dark) 55%, #0B3D2A 100%);
   color: #DCE7F0; padding: 54px 46px; display: flex; flex-direction: column; justify-content: center;
 }
 /*
@@ -427,15 +436,6 @@ ol.conditions li { margin-bottom: 3px; }
 .login-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 34px 22px; background: var(--bg); }
 .login-card { width: 100%; max-width: 380px; }
 .login-card h2 { font-size: 20px; margin-bottom: 4px; }
-.demo-accounts { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 14px; }
-.demo-accounts h4 { font-size: 11px; letter-spacing: .9px; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
-.demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.demo-grid button {
-  text-align: left; background: #fff; border: 1px solid var(--line); border-radius: 7px;
-  padding: 7px 9px; cursor: pointer; font: inherit; font-size: 11.4px; color: var(--muted);
-}
-.demo-grid button:hover { border-color: var(--navy-soft); }
-.demo-grid button b { display: block; color: var(--ink); font-size: 12.2px; }
 
 /* ------------------------------------------------------------------- charts */
 .bars { display: flex; flex-direction: column; gap: 7px; }

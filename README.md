@@ -81,7 +81,9 @@ npm run demo                  # optional: write a worked example of the trade
 npm start                     # → http://localhost:4000
 ```
 
-Sign in with any of the desks below and the starter password **`akr@2026`**.
+Sign in with any of the desks below and the starter password **`akr@2026`**. They are listed here,
+in the README, and deliberately **not** on the sign-in page: a page that names five accounts and
+prints the password under them is a convenience for a demonstration and a gift to anybody else.
 
 | Desk | Email | What they do |
 |---|---|---|

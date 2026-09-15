@@ -501,3 +501,28 @@ test('a letterhead prints the lock-up, and does not set the name twice', async (
   assert.equal((await admin.get('/api/auth/me')).company.logoFullUploaded, false,
     'the badge standing in for the lock-up keeps the name in type');
 });
+
+test('the sign-in page does not advertise who works here, or the password', async () => {
+  /*
+   * The page carried a grid of every desk in the system — name, role and email
+   * — and the starter password in plain type beneath it. That is a convenience
+   * for a demonstration and a gift to anybody else: it names five accounts to
+   * try, and tells them what to try first. A company's real sign-in page says
+   * nothing it does not have to.
+   */
+  const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'app.css'), 'utf8');
+
+  assert.ok(!/demo-accounts|demo-grid/.test(app), 'the desk picker is gone from the page');
+  assert.ok(!/demo-accounts|demo-grid/.test(css), 'and so are the styles that dressed it');
+  assert.ok(!/Desks in this system/i.test(app));
+  assert.ok(!/akr@2026/.test(app), 'the starter password is not printed on it');
+
+  // The one address left on the page is an example in a placeholder, and it is
+  // not one of the accounts that exist.
+  const named = app.match(/(admin|kam|accounts|sales|logistics)@akr365\.com/g) || [];
+  assert.deepEqual(named, [], 'no real account is named anywhere on the sign-in page');
+
+  // The hero cannot be squeezed off the page by the panel beside it.
+  assert.match(css, /flex: 1\.15 1 420px/, 'the hero keeps a real basis');
+});
