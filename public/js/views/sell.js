@@ -443,6 +443,8 @@
         });
       },
       footer: `<button class="btn ghost" data-act="__close">Close</button>
+        ${APP.can(['kam', 'sales']) && !['cancelled', 'closed'].includes(o.status)
+          ? '<button class="btn ghost" data-act="amend">Add items / edit</button>' : ''}
         ${APP.can(['kam']) ? '<button class="btn ghost" data-act="plan">What to buy in</button>' : ''}
         ${APP.can(['accounts']) && d.schedule.advance > o.advance_received
           ? '<button class="btn ghost" data-act="advance">Record the advance</button>' : ''}
@@ -450,6 +452,7 @@
           ? '<button class="btn gold" data-act="deliver">Deliver</button>' : ''}
         ${APP.can(['accounts']) ? '<button class="btn green" data-act="invoice">Raise the tax invoice</button>' : ''}`,
       async onAction(act) {
+        if (act === 'amend') { UI.closeAllModals(); openAmendOrder(d); return; }
         if (act === 'deliver') { UI.closeAllModals(); openDelivery(d); return; }
         if (act === 'invoice') { UI.closeAllModals(); openInvoice(d); return; }
         if (act === 'advance') { UI.closeAllModals(); MONEY.openPayment({ direction: 'in',
@@ -461,6 +464,68 @@
           showPurchasePlan(plan);
           return 'keep';
         }
+      },
+    });
+  }
+
+  /*
+   * More on the same LPO.
+   *
+   * A client sends another line against an order already on the books. Raising
+   * a second order under the same LPO number is refused — the number is what
+   * ties the client's paperwork to the delivery note and the invoice — so the
+   * order itself is amended.
+   *
+   * The lines come back carrying their own ids, so what is already delivered
+   * stays attached to the row it went out against. What has gone out is shown
+   * on the row and cannot be cut below: the server refuses it, and saying so
+   * here saves the round trip.
+   */
+  async function openAmendOrder(d) {
+    const o = d.order;
+    const gone = d.items.filter((i) => (i.delivered_qty || 0) > 0 || (i.invoiced_qty || 0) > 0);
+
+    UI.modal({
+      title: `Amend ${o.so_no} — client LPO ${o.client_lpo_no}`,
+      size: 'wide',
+      body: `<form id="a-form">
+        <div class="muted small mb">The client's own LPO number does not change. Add the new lines
+          underneath the ones already on the order, and what is committed in the stock register
+          moves with them.</div>
+        ${gone.length ? `<div class="alert"><b>Already gone out against this order:</b>
+          ${gone.map((i) => `${UI.esc(i.description)} — ${UI.qty(i.delivered_qty)} delivered${
+            i.invoiced_qty ? `, ${UI.qty(i.invoiced_qty)} invoiced` : ''}`).join('; ')}.
+          Those lines can be added to, but not removed or cut below what has left the yard.</div>` : ''}
+        <div class="grid g3">
+          ${UI.field({ name: 'client_lpo_date', label: 'Their LPO date', type: 'date',
+            value: o.client_lpo_date || '' })}
+          ${UI.field({ name: 'delivery_date', label: 'Delivery by', type: 'date',
+            value: o.delivery_date || '' })}
+          ${UI.field({ name: 'project', label: 'Project', value: o.project || '' })}
+        </div>
+        <h4 class="mt">Lines</h4>
+        <div id="lines"></div>
+        ${UI.field({ name: 'notes', label: 'Notes', rows: 2, value: o.notes || '' })}
+      </form>`,
+      footer: `<button class="btn ghost" data-act="__close">Cancel</button>
+               <button class="btn" data-act="save">Save the order</button>`,
+      onMount(modal) {
+        modal._lines = LINES.LineEditor(modal.querySelector('#lines'), {
+          side: 'sell', lines: d.items,
+        });
+      },
+      async onAction(act, modal) {
+        if (act !== 'save') return undefined;
+        const form = modal.querySelector('#a-form');
+        if (!form.reportValidity()) return 'keep';
+        const items = modal._lines.value();
+        if (!items.length) { UI.err('An order needs at least one line.'); return 'keep'; }
+        const saved = await API.patch(`/api/sales/orders/${o.id}`,
+          { ...UI.formValues(form), items });
+        UI.ok(`${saved.so_no} saved — ${items.length} line${items.length === 1 ? '' : 's'} on `
+          + `LPO ${saved.client_lpo_no}.`);
+        APP.reload();
+        return undefined;
       },
     });
   }

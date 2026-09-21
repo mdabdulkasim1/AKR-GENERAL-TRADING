@@ -21,13 +21,28 @@
     return itemCache;
   }
 
+  /*
+   * Everything worth typing about an item, in one lower-cased string.
+   *
+   * Built from a list rather than by adding strings together: written the other
+   * way, `a + b.toLowerCase()` lowers only b, and the item code and the name —
+   * the two things anybody actually types — kept their capitals and could never
+   * match a lower-cased search. The picker then answered nothing to "hex" and
+   * everything to an empty box, which reads exactly like a newly added item
+   * having failed to save.
+   */
+  const haystack = (i) => [
+    i.item_code, i.name, i.description, i.size, i.material, i.brand,
+    i.mfr_part_no, i.standard, i.pressure_class,
+    i.category_name, i.subgroup_name, i.application_name,
+  ].filter(Boolean).join(' ').toLowerCase();
+
   function search(items, term) {
     const q = String(term || '').trim().toLowerCase();
     if (!q) return items.slice(0, 40);
     const words = q.split(/\s+/);
     return items.filter((i) => {
-      const hay = `${i.item_code} ${i.name} ${i.size || ''} ${i.material || ''} ${i.brand || ''} `
-        + `${i.category_name || ''} ${i.subgroup_name || ''} ${i.application_name || ''}`.toLowerCase();
+      const hay = haystack(i);
       return words.every((w) => hay.includes(w));
     }).slice(0, 40);
   }
@@ -58,6 +73,15 @@
     }
     function normalise(l) {
       return {
+        /*
+         * The line's own id, where it has one.
+         *
+         * A document being amended is not being rewritten: its lines are rows
+         * that deliveries and invoices already point at. Carrying the id back
+         * out lets the server update the row that exists rather than replace
+         * it, which would leave that paperwork pointing at nothing.
+         */
+        id: l.id || null,
         item_id: l.item_id || null,
         item_code: l.item_code || '',
         description: l.description || '',
@@ -254,11 +278,26 @@
       const input = tr.querySelector('[data-f="description"]');
       const list = tr.querySelector('[data-list]');
       let items = itemCache || [];
+      let lastMiss = 0;
 
       const close = () => { list.hidden = true; list.innerHTML = ''; };
       const open = async () => {
         items = await catalogue();
-        const found = search(items, input.value);
+        let found = search(items, input.value);
+        /*
+         * Nothing matched: ask the server once before giving up.
+         *
+         * The catalogue is fetched once and searched here, which is what makes
+         * the picker quick. The cost is that an item added on another screen —
+         * or by somebody else, on another machine — is not in it. Rather than
+         * leave a real item looking missing, a search that finds nothing
+         * refreshes the list and tries again, at most once every few seconds.
+         */
+        if (!found.length && input.value.trim() && Date.now() - lastMiss > 4000) {
+          lastMiss = Date.now();
+          items = await catalogue(true);
+          found = search(items, input.value);
+        }
         if (!found.length) return close();
         list.innerHTML = found.map((it, n) => `
           <button type="button" data-pick="${it.id}" class="${n === 0 ? 'on' : ''}">
@@ -304,6 +343,7 @@
         return state.rows
           .filter((r) => r.description && Number(r.qty) > 0)
           .map((r) => ({
+            id: r.id || null,
             item_id: r.item_id || null,
             item_code: r.item_code || null,
             description: r.description,

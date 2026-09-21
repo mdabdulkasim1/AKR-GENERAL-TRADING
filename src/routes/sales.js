@@ -589,6 +589,159 @@ router.post('/orders', seller, wrap(async (req, res) => {
   res.status(201).json(db.prepare(`${SO_SELECT} WHERE o.id = ?`).get(result.id));
 }));
 
+/**
+ * Amend a client's LPO: more items on the same order.
+ *
+ * A client sends another line against an LPO already on the books — two more
+ * valves on the same order number — and there is nowhere to put it. Raising a
+ * second order carrying the same LPO number is refused, and rightly: the number
+ * is how the client, the delivery note and the invoice all find each other. So
+ * the order itself is amended.
+ *
+ * What was already delivered or invoiced is the floor. A line that material has
+ * gone out against cannot be taken off, and its quantity cannot be cut below
+ * what has left the yard — the paperwork for those movements exists and pointing
+ * it at nothing is how a stock register stops reconciling. Lines are updated
+ * where they stand rather than replaced, because a delivery note's own lines
+ * hold their id.
+ *
+ * The stock commitment follows by the difference. Adding four commits four more;
+ * cutting a line by one releases one. Nothing re-posts what deliveries have
+ * already released, so the register stays right without being rebuilt.
+ */
+router.patch('/orders/:id', seller, wrap(async (req, res) => {
+  const order = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(req.params.id);
+  if (!order) throw notFound('No such order.');
+  if (order.status === 'cancelled') {
+    throw conflict('This order is cancelled. Record the client\'s new LPO as an order of its own.');
+  }
+  if (order.status === 'closed') {
+    throw conflict('This order is closed — delivered and invoiced in full. A further order from the '
+      + 'client belongs on an LPO of its own.');
+  }
+
+  const b = req.body;
+  const client = db.prepare('SELECT * FROM partners WHERE id = ?').get(order.partner_id);
+  const before = db.prepare('SELECT * FROM sales_order_items WHERE so_id = ? ORDER BY line_no, id')
+    .all(order.id);
+
+  let priced = null;
+  if (Array.isArray(b.items)) {
+    if (!b.items.length) throw badRequest('An order needs at least one line.');
+    priced = docs.buildLines(b.items, { side: 'sell' });
+
+    const kept = new Set(b.items.map((i) => Number(i.id)).filter(Boolean));
+    for (const line of before) {
+      const gone = Math.max(line.delivered_qty || 0, line.invoiced_qty || 0);
+      if (!kept.has(line.id) && gone > 0) {
+        throw conflict(`${line.description} has already been delivered or invoiced against, `
+          + 'so it cannot be taken off this order.');
+      }
+    }
+    b.items.forEach((incoming, i) => {
+      const was = incoming.id ? before.find((e) => e.id === Number(incoming.id)) : null;
+      if (!was) return;
+      const floor = Math.max(was.delivered_qty || 0, was.invoiced_qty || 0);
+      if (priced.lines[i].qty < floor) {
+        throw conflict(`${was.description}: ${floor} ${was.uom} has already gone out, `
+          + 'so the line cannot be cut below that.');
+      }
+    });
+  }
+
+  const result = tx(() => {
+    let footer = null;
+    if (priced) {
+      const kept = new Set();
+      priced.lines.forEach((line, i) => {
+        const id = Number(b.items[i].id) || null;
+        const was = id ? before.find((e) => e.id === id) : null;
+        if (was) {
+          kept.add(was.id);
+          const cols = docs.LINE_COLUMNS.salesOrder;
+          db.prepare(`UPDATE sales_order_items SET line_no = @line_no, `
+            + `${cols.map((c) => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({
+            id: was.id,
+            line_no: i + 1,
+            ...Object.fromEntries(cols.map((c) => [c, line[c] === undefined ? null : line[c]])),
+          });
+        } else {
+          docs.insertLines('sales_order_items', 'so_id', order.id, [line],
+            docs.LINE_COLUMNS.salesOrder);
+          db.prepare('UPDATE sales_order_items SET line_no = ? WHERE id = ?')
+            .run(i + 1, db.prepare('SELECT MAX(id) AS m FROM sales_order_items').get().m);
+        }
+      });
+      for (const line of before) {
+        if (!kept.has(line.id)) db.prepare('DELETE FROM sales_order_items WHERE id = ?').run(line.id);
+      }
+
+      footer = priced.footer;
+      db.prepare(`UPDATE sales_orders SET subtotal = @subtotal, discount = @discount,
+          vat_amount = @vat_amount, total = @total, application_id = @application_id
+        WHERE id = @id`).run({
+        ...footer, id: order.id,
+        application_id: docs.resolveApplication(b.application_id || order.application_id, priced.lines),
+      });
+
+      /*
+       * The commitment moves by the difference, item by item. A line that was
+       * not there is committed in full; one that grew is committed for what it
+       * grew by; one that shrank releases the difference. What deliveries have
+       * already released is not touched.
+       */
+      const wasQty = new Map();
+      for (const l of before) if (l.item_id) wasQty.set(l.item_id, (wasQty.get(l.item_id) || 0) + l.qty);
+      const nowQty = new Map();
+      for (const l of priced.lines) if (l.item_id) nowQty.set(l.item_id, (nowQty.get(l.item_id) || 0) + l.qty);
+      for (const itemId of new Set([...wasQty.keys(), ...nowQty.keys()])) {
+        const delta = pricing.round((nowQty.get(itemId) || 0) - (wasQty.get(itemId) || 0));
+        if (!delta) continue;
+        stock.post({
+          companyId: order.company_id, itemId, bucket: 'committed', kind: 'order_committed',
+          qty: delta, refType: 'sales_order', refId: order.id, refNo: order.so_no,
+          partnerId: order.partner_id, movedOn: v.today(), userId: req.user.id,
+          notes: `${delta > 0 ? 'Added to' : 'Released from'} ${order.so_no} — amended`,
+        });
+      }
+    }
+
+    db.prepare(`UPDATE sales_orders SET client_lpo_date = @client_lpo_date, project = @project,
+        delivery_date = @delivery_date, purchase_officer = @purchase_officer,
+        purchase_officer_mobile = @purchase_officer_mobile, delivery_contact = @delivery_contact,
+        delivery_mobile = @delivery_mobile, delivery_location = @delivery_location,
+        delivery_address = @delivery_address, notes = @notes WHERE id = @id`).run({
+      id: order.id,
+      client_lpo_date: v.date(b.client_lpo_date) || order.client_lpo_date,
+      project: v.str(b.project, order.project),
+      delivery_date: v.date(b.delivery_date) || order.delivery_date,
+      purchase_officer: v.str(b.purchase_officer, order.purchase_officer),
+      purchase_officer_mobile: v.phone(b.purchase_officer_mobile) || order.purchase_officer_mobile,
+      delivery_contact: v.str(b.delivery_contact, order.delivery_contact),
+      delivery_mobile: v.phone(b.delivery_mobile) || order.delivery_mobile,
+      delivery_location: v.str(b.delivery_location, order.delivery_location),
+      delivery_address: v.str(b.delivery_address, order.delivery_address),
+      notes: v.str(b.notes, order.notes),
+    });
+    return footer;
+  })();
+
+  if (result && result.total !== order.total) {
+    notify.toRole('logistics', {
+      title: `Client LPO amended — ${order.so_no}`,
+      body: `${client ? client.name : 'The client'} changed LPO ${order.client_lpo_no}. `
+        + 'What is committed in the stock register has moved with it.',
+      route: `#/sales-orders?id=${order.id}`,
+    });
+  }
+
+  audit.log(req, 'sales_order.amended', 'sales_order', order.id, {
+    soNo: order.so_no, clientLpo: order.client_lpo_no,
+    was: order.total, now: result ? result.total : order.total,
+  });
+  res.json(db.prepare(`${SO_SELECT} WHERE o.id = ?`).get(order.id));
+}));
+
 router.post('/orders/:id/cancel', seller, wrap(async (req, res) => {
   const order = db.prepare('SELECT * FROM sales_orders WHERE id = ?').get(req.params.id);
   if (!order) throw notFound('No such order.');

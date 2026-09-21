@@ -440,3 +440,75 @@ test("an expense books against the client's LPO too, and lands on their job", as
     (err) => err.status === 400 && /No such client LPO/.test(err.message),
   );
 });
+
+test("a client's further order goes onto the same LPO", async () => {
+  /*
+   * A client sends another line against an LPO already on the books. A second
+   * order carrying the same LPO number is refused — the number is how the
+   * client, the delivery note and the invoice find each other — so the order
+   * itself is amended, and what is committed in the stock register moves with
+   * it.
+   */
+  const so = ctx.order;
+  const full = await admin.get(`/api/sales/orders/${so.id}`);
+  const line = full.items[0];
+  const committedBefore = (await admin.get(`/api/stock/items/${ctx.item.id}`)).balance.committed;
+
+  // The same LPO number cannot come back as a second order.
+  await assert.rejects(
+    () => admin.post('/api/sales/orders', {
+      partner_id: ctx.client.id, client_lpo_no: so.client_lpo_no,
+      items: [{ item_id: ctx.item.id, qty: 1, unit_price: 880 }],
+    }),
+    (err) => err.status === 409 && /already on the books/.test(err.message),
+  );
+
+  // It goes on the order instead: the line that exists, plus a new one.
+  const second = (await admin.get('/api/items?limit=2')).rows.find((i) => i.id !== ctx.item.id);
+  const amended = await admin.patch(`/api/sales/orders/${so.id}`, {
+    items: [
+      { id: line.id, item_id: line.item_id, qty: line.qty, unit_price: line.unit_price },
+      { item_id: second.id, qty: 3, unit_price: 120 },
+    ],
+  });
+  assert.equal(amended.client_lpo_no, so.client_lpo_no, 'the same LPO number');
+  assert.equal(amended.so_no, so.so_no, 'and the same order');
+  assert.ok(amended.total > so.total, 'the order is worth more than it was');
+
+  const after = await admin.get(`/api/sales/orders/${so.id}`);
+  assert.equal(after.items.length, 2);
+  assert.equal(after.items[0].id, line.id, 'the first line is the same row, not a replacement');
+  assert.equal(after.items[0].delivered_qty, line.delivered_qty, 'and it kept what went out against it');
+
+  // The new line is committed; the untouched one is not committed twice.
+  const committedNow = (await admin.get(`/api/stock/items/${ctx.item.id}`)).balance.committed;
+  assert.equal(committedNow, committedBefore, 'the line that did not change did not move');
+  assert.equal((await admin.get(`/api/stock/items/${second.id}`)).balance.committed, 3,
+    'and the added line is committed');
+
+  // What has already gone out is the floor.
+  if (line.delivered_qty > 0) {
+    await assert.rejects(
+      () => admin.patch(`/api/sales/orders/${so.id}`, {
+        items: [{ id: line.id, item_id: line.item_id, qty: 0.5, unit_price: line.unit_price }],
+      }),
+      (err) => err.status === 409 && /already gone out/.test(err.message),
+    );
+    await assert.rejects(
+      () => admin.patch(`/api/sales/orders/${so.id}`, {
+        items: [{ item_id: second.id, qty: 3, unit_price: 120 }],
+      }),
+      (err) => err.status === 409 && /delivered or invoiced/.test(err.message),
+    );
+  }
+
+  // Growing a line commits the difference, not the whole line again.
+  await admin.patch(`/api/sales/orders/${so.id}`, {
+    items: [
+      { id: line.id, item_id: line.item_id, qty: line.qty, unit_price: line.unit_price },
+      { item_id: second.id, qty: 5, unit_price: 120 },
+    ],
+  });
+  assert.equal((await admin.get(`/api/stock/items/${second.id}`)).balance.committed, 5,
+    'five committed in total, not eight');
+});
