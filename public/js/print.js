@@ -305,7 +305,7 @@
           ['Quotation no.', q.quote_no],
           ['Date', UI.date(q.quote_date)],
           ['Valid until', UI.date(q.valid_until)],
-          ['Delivery', q.delivery_days ? `${q.delivery_days} days from order` : (q.delivery_terms || 'Ex-stock')],
+          ['Delivery', UI.leadTime(q) || (q.delivery_terms || 'Ex-stock')],
         ])}
         ${itemsTable(data.items)}
         ${totalsBlock(q, { words: data.amountInWords })}

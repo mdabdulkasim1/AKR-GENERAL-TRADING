@@ -46,6 +46,24 @@
       const n = Number(v) || 0;
       return Number.isInteger(n) ? n.toLocaleString('en-AE') : String(Math.round(n * 1000) / 1000);
     },
+    /*
+     * A lead time, the way the trade says it.
+     *
+     * A maker quotes six weeks, not forty-two days. Weeks is what is entered
+     * now; documents written before that hold only days, so those are turned
+     * into weeks here — and a part week rounds up, because a lead time that
+     * rounds down is a promise the company cannot keep. Under a week it stays
+     * in days, where weeks would be a silly way to say it.
+     */
+    leadTime(doc) {
+      if (!doc) return '';
+      const weeks = Number(doc.delivery_weeks) || 0;
+      const days = Number(doc.delivery_days) || 0;
+      if (!weeks && !days) return '';
+      if (!weeks && days < 7) return `${days} day${days === 1 ? '' : 's'} from order`;
+      const w = weeks || Math.ceil(days / 7);
+      return `${w} week${w === 1 ? '' : 's'} from order`;
+    },
     date(value) {
       const d = parse(value);
       return d ? `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}` : '—';

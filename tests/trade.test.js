@@ -512,3 +512,33 @@ test("a client's further order goes onto the same LPO", async () => {
   assert.equal((await admin.get(`/api/stock/items/${second.id}`)).balance.committed, 5,
     'five committed in total, not eight');
 });
+
+test('a lead time is quoted in weeks, and kept in days as well', async () => {
+  /*
+   * A maker says six weeks, never forty-two days, so weeks is what is entered
+   * and what prints. Days is written alongside it so anything that already
+   * reads the lead time in days — a clause, an older report — stays true.
+   */
+  const quote = await admin.post('/api/sales/quotations', {
+    partner_id: ctx.client.id, delivery_weeks: 6,
+    items: [{ item_id: ctx.item.id, qty: 1, unit_price: 100 }],
+  });
+  const full = await admin.get(`/api/sales/quotations/${quote.id}`);
+  assert.equal(full.quotation.delivery_weeks, 6);
+  assert.equal(full.quotation.delivery_days, 42, 'six weeks is forty-two days');
+
+  // Editing it moves both.
+  await admin.patch(`/api/sales/quotations/${quote.id}`, { delivery_weeks: 8 });
+  const after = await admin.get(`/api/sales/quotations/${quote.id}`);
+  assert.equal(after.quotation.delivery_weeks, 8);
+  assert.equal(after.quotation.delivery_days, 56);
+
+  // A supplier's quotation reads the same way.
+  const sq = await askForPrice(admin, {
+    partner_id: ctx.supplier.id, delivery_weeks: 10,
+    items: [{ item_id: ctx.item.id, qty: 1, unit_price: 90 }],
+  });
+  const gotSq = await admin.get(`/api/purchase/quotations/${sq.id}`);
+  assert.equal(gotSq.quotation.delivery_weeks, 10);
+  assert.equal(gotSq.quotation.delivery_days, 70);
+});

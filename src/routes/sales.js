@@ -262,10 +262,10 @@ router.post('/quotations', seller, wrap(async (req, res) => {
     const info = db.prepare(`
       INSERT INTO sales_quotations (company_id, quote_no, revision, partner_id, enquiry_id,
         application_id, project, subject, attention, quote_date, valid_until, payment_terms_id,
-        delivery_days, delivery_terms, currency, subtotal, discount, vat_amount, total, cost_total,
-        status, notes, terms_text, created_by)
+        delivery_days, delivery_weeks, delivery_terms, currency, subtotal, discount, vat_amount,
+        total, cost_total, status, notes, terms_text, created_by)
       VALUES (@company_id, @quote_no, 0, @partner_id, @enquiry_id, @application_id, @project,
-        @subject, @attention, @quote_date, @valid_until, @payment_terms_id, @delivery_days,
+        @subject, @attention, @quote_date, @valid_until, @payment_terms_id, @delivery_days, @delivery_weeks,
         @delivery_terms, @currency, @subtotal, @discount, @vat_amount, @total, @cost_total,
         @status, @notes, @terms_text, @created_by)`).run({
       company_id: company.id,
@@ -279,7 +279,15 @@ router.post('/quotations', seller, wrap(async (req, res) => {
       quote_date: quoteDate,
       valid_until: v.date(b.valid_until) || v.addDays(quoteDate, 30),
       payment_terms_id: b.payment_terms_id || client.payment_terms_id || null,
-      delivery_days: v.int(b.delivery_days, 0),
+      /*
+       * Quoted in weeks, kept in days as well.
+       *
+       * The trade says six weeks, not forty-two days, so weeks is what is
+       * entered and what is shown. Days is written alongside so anything that
+       * already reads the lead time in days stays true.
+       */
+      delivery_weeks: v.int(b.delivery_weeks, 0),
+      delivery_days: v.int(b.delivery_weeks, 0) * 7 || v.int(b.delivery_days, 0),
       delivery_terms: v.str(b.delivery_terms),
       currency: v.str(b.currency, client.currency || 'AED'),
       ...priced.footer,
@@ -322,7 +330,8 @@ router.patch('/quotations/:id', seller, wrap(async (req, res) => {
       });
     }
     db.prepare(`UPDATE sales_quotations SET subject = @subject, project = @project, attention = @attention,
-        valid_until = @valid_until, payment_terms_id = @payment_terms_id, delivery_days = @delivery_days,
+        valid_until = @valid_until, payment_terms_id = @payment_terms_id,
+        delivery_days = @delivery_days, delivery_weeks = @delivery_weeks,
         delivery_terms = @delivery_terms, status = @status, notes = @notes, terms_text = @terms_text
       WHERE id = @id`).run({
       id: row.id,
@@ -331,7 +340,9 @@ router.patch('/quotations/:id', seller, wrap(async (req, res) => {
       attention: v.str(b.attention, row.attention),
       valid_until: v.date(b.valid_until) || row.valid_until,
       payment_terms_id: b.payment_terms_id === undefined ? row.payment_terms_id : (b.payment_terms_id || null),
-      delivery_days: v.int(b.delivery_days, row.delivery_days),
+      delivery_weeks: v.int(b.delivery_weeks, row.delivery_weeks),
+      delivery_days: v.int(b.delivery_weeks, row.delivery_weeks) * 7
+        || v.int(b.delivery_days, row.delivery_days),
       delivery_terms: v.str(b.delivery_terms, row.delivery_terms),
       status: v.oneOf(b.status, ['draft', 'sent', 'under_review', 'approved', 'rejected', 'expired'], 'status') || row.status,
       notes: v.str(b.notes, row.notes),
@@ -379,10 +390,10 @@ router.post('/quotations/:id/revise', seller, wrap(async (req, res) => {
     const info = db.prepare(`
       INSERT INTO sales_quotations (company_id, quote_no, revision, partner_id, enquiry_id,
         application_id, project, subject, attention, quote_date, valid_until, payment_terms_id,
-        delivery_days, delivery_terms, currency, subtotal, discount, vat_amount, total, cost_total,
-        status, notes, terms_text, created_by)
+        delivery_days, delivery_weeks, delivery_terms, currency, subtotal, discount, vat_amount,
+        total, cost_total, status, notes, terms_text, created_by)
       SELECT company_id, @quote_no, @revision, partner_id, enquiry_id, application_id, project,
-        subject, attention, date('now'), date('now', '+30 days'), payment_terms_id, delivery_days,
+        subject, attention, date('now'), date('now', '+30 days'), payment_terms_id, delivery_days, delivery_weeks,
         delivery_terms, currency, subtotal, discount, vat_amount, total, cost_total,
         'draft', notes, terms_text, @created_by
         FROM sales_quotations WHERE id = @id`).run({

@@ -175,10 +175,11 @@ router.post('/quotations', buyer, wrap(async (req, res) => {
     const info = db.prepare(`
       INSERT INTO supplier_quotations (company_id, quote_no, partner_id, enquiry_id, application_id,
         supplier_ref, subject, project, quote_date, valid_until, payment_terms_id, delivery_days,
-        currency, exchange_rate, subtotal, discount, vat_amount, total, status, notes, terms_text,
+        delivery_weeks, currency, exchange_rate, subtotal, discount, vat_amount, total, status, notes, terms_text,
         linked_sales_quotation_id, created_by)
       VALUES (@company_id, @quote_no, @partner_id, @enquiry_id, @application_id, @supplier_ref,
-        @subject, @project, @quote_date, @valid_until, @payment_terms_id, @delivery_days, @currency,
+        @subject, @project, @quote_date, @valid_until, @payment_terms_id, @delivery_days,
+        @delivery_weeks, @currency,
         @exchange_rate, @subtotal, @discount, @vat_amount, @total, @status, @notes, @terms_text,
         @linked_sales_quotation_id, @created_by)`).run({
       company_id: company.id,
@@ -193,7 +194,9 @@ router.post('/quotations', buyer, wrap(async (req, res) => {
       quote_date: quoteDate,
       valid_until: v.date(b.valid_until) || v.addDays(quoteDate, 30),
       payment_terms_id: b.payment_terms_id || supplier.payment_terms_id || null,
-      delivery_days: v.int(b.delivery_days, 0),
+      // Weeks is what a maker quotes; days is kept in step. See sales.js.
+      delivery_weeks: v.int(b.delivery_weeks, 0),
+      delivery_days: v.int(b.delivery_weeks, 0) * 7 || v.int(b.delivery_days, 0),
       currency: v.str(b.currency, supplier.currency || 'AED'),
       // One dirham to one, unless the order is in somebody else's money.
       exchange_rate: v.num(b.exchange_rate, 1) > 0 ? v.num(b.exchange_rate, 1) : 1,
@@ -248,7 +251,8 @@ router.patch('/quotations/:id', buyer, wrap(async (req, res) => {
     }
     db.prepare(`UPDATE supplier_quotations SET supplier_ref = @supplier_ref, subject = @subject,
         project = @project, valid_until = @valid_until, payment_terms_id = @payment_terms_id,
-        delivery_days = @delivery_days, status = @status, notes = @notes, terms_text = @terms_text
+        delivery_days = @delivery_days, delivery_weeks = @delivery_weeks,
+        status = @status, notes = @notes, terms_text = @terms_text
       WHERE id = @id`).run({
       id: row.id,
       supplier_ref: v.str(b.supplier_ref, row.supplier_ref),
@@ -256,7 +260,9 @@ router.patch('/quotations/:id', buyer, wrap(async (req, res) => {
       project: v.str(b.project, row.project),
       valid_until: v.date(b.valid_until) || row.valid_until,
       payment_terms_id: b.payment_terms_id === undefined ? row.payment_terms_id : (b.payment_terms_id || null),
-      delivery_days: v.int(b.delivery_days, row.delivery_days),
+      delivery_weeks: v.int(b.delivery_weeks, row.delivery_weeks),
+      delivery_days: v.int(b.delivery_weeks, row.delivery_weeks) * 7
+        || v.int(b.delivery_days, row.delivery_days),
       status: v.oneOf(b.status, ['requested', 'received', 'approved', 'rejected', 'expired'], 'status') || row.status,
       notes: v.str(b.notes, row.notes),
       terms_text: v.str(b.terms_text, row.terms_text),

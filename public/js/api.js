@@ -5,17 +5,39 @@
 
   let token = localStorage.getItem('akr_token') || null;
 
+  /*
+   * The platform restarts the container on every deploy, and a request caught
+   * in that second comes back 502, 503 or 504 from the edge — the application
+   * never saw it. It is not an error anybody can act on, and it left a screen
+   * stuck on "Could not load this page" until somebody reloaded by hand.
+   *
+   * So a read that lands in that window waits and asks again. Only a read: a
+   * write may well have been carried out before the connection dropped, and
+   * sending it twice could raise two orders.
+   */
+  const GATEWAY = [502, 503, 504];
+  const pause = (ms) => new Promise((done) => setTimeout(done, ms));
+
   async function request(method, path, body, opts = {}) {
     const headers = { 'Content-Type': opts.contentType || 'application/json' };
     if (token) headers.Authorization = 'Bearer ' + token;
 
-    const res = await fetch(path, {
+    const send = () => fetch(path, {
       method,
       headers,
       credentials: 'same-origin',
       body: body === undefined ? undefined
         : (opts.contentType === 'text/csv' ? body : JSON.stringify(body)),
     });
+
+    let res = await send();
+    if (method === 'GET' && GATEWAY.includes(res.status)) {
+      for (const wait of [400, 1200, 2500]) {
+        await pause(wait);
+        res = await send();
+        if (!GATEWAY.includes(res.status)) break;
+      }
+    }
 
     if (res.status === 401 && !path.includes('/auth/')) {
       API.setToken(null);
@@ -28,7 +50,10 @@
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
 
     if (!res.ok) {
-      const err = new Error((data && data.error) || `Request failed (${res.status})`);
+      const err = new Error((data && data.error)
+        || (GATEWAY.includes(res.status)
+          ? 'The server is restarting — this usually clears in a few seconds.'
+          : `Request failed (${res.status})`));
       err.status = res.status;
       err.details = data && data.details;
       err.payload = data;

@@ -72,7 +72,7 @@
             ['Project', esc(q.project || '—')],
             ['Quoted on', UI.date(q.quote_date)],
             ['Valid until', UI.date(q.valid_until)],
-            ['Lead time', q.delivery_days ? `${q.delivery_days} days` : '—'],
+            ['Lead time', UI.leadTime(q) || '—'],
           ])}</div>
           <div>${UI.facts([
             ['Payment terms', esc(d.termsText)],
@@ -86,7 +86,9 @@
           { label: 'Description', render: (r) => esc(r.description) },
           { label: 'Qty', num: true, render: (r) => `${UI.qty(r.qty)} ${esc(r.uom)}` },
           { label: 'Rate', num: true, render: (r) => (r.unit_price ? UI.money(r.unit_price, { symbol: false }) : '—') },
-          { label: 'Lead', num: true, render: (r) => (r.lead_days ? `${r.lead_days} d` : '—') },
+          // A line's own lead time, in the same unit as the order's.
+          { label: 'Lead', num: true, render: (r) => (r.lead_days
+            ? (r.lead_days < 7 ? `${r.lead_days} d` : `${Math.ceil(r.lead_days / 7)} wk`) : '—') },
           { label: 'Amount', num: true, render: (r) => UI.money(r.total, { symbol: false }) },
         ], d.items)}
         ${d.orders.length ? `<div class="alert ok mt">Ordered on

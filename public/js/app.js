@@ -460,7 +460,17 @@
     try {
       await view.render(container, params);
     } catch (err) {
-      container.innerHTML = `<div class="alert danger"><b>Could not load this page.</b><br>${UI.esc(err.message)}</div>`;
+      /*
+       * A dead end is not an error message. Whatever went wrong — the server
+       * restarting, a connection dropped on a phone — the one thing the person
+       * looking at it wants is to try again, so the button is right there.
+       */
+      container.innerHTML = `<div class="alert danger">
+        <b>Could not load this page.</b><br>${UI.esc(err.message)}
+        <div class="btn-row mt"><button class="btn ghost sm" id="view-retry">Try again</button></div>
+      </div>`;
+      const retry = document.getElementById('view-retry');
+      if (retry) retry.addEventListener('click', () => router());
     }
   }
   APP.reload = router;

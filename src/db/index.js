@@ -61,6 +61,22 @@ function migrate() {
   for (const table of ['purchase_orders', 'sales_quotations', 'supplier_quotations']) {
     ensureColumn(table, 'exchange_rate', 'REAL NOT NULL DEFAULT 1');
   }
+  /*
+   * Lead time in weeks, which is how this trade actually quotes it.
+   *
+   * A maker says six to eight weeks, never forty-two days. The days column
+   * stays and is kept in step, so anything already written against it — a
+   * printed quotation, a clause that cites the lead time — still reads true;
+   * weeks is what is entered and what is shown. Rows written before this are
+   * carried across once, rounding a part week up, because a lead time that
+   * rounds down is a promise the company cannot keep.
+   */
+  for (const table of ['sales_quotations', 'supplier_quotations']) {
+    if (ensureColumn(table, 'delivery_weeks', 'INTEGER NOT NULL DEFAULT 0')) {
+      db.prepare(`UPDATE ${table} SET delivery_weeks = CAST((delivery_days + 6) / 7 AS INTEGER)
+                   WHERE delivery_days > 0`).run();
+    }
+  }
   ensureCostingHeads();
   // The working behind a quoted rate, on the line it belongs to.
   ensureColumn('sales_quotation_items', 'cost_build', 'TEXT');

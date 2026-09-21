@@ -98,7 +98,7 @@
             ['Subject', esc(q.subject || '—')],
             ['Attention', esc(q.attention || '—')],
             ['Valid until', UI.date(q.valid_until)],
-            ['Delivery', q.delivery_days ? `${q.delivery_days} days from order` : (q.delivery_terms || '—')],
+            ['Delivery', UI.leadTime(q) || (q.delivery_terms || '—')],
             ['Payment terms', esc(d.termsText)],
           ])}</div>
           <div>${UI.facts([
@@ -202,8 +202,9 @@
           ${UI.field({ name: 'quote_date', label: 'Date', type: 'date', value: q ? q.quote_date : UI.today() })}
           ${UI.field({ name: 'valid_until', label: 'Valid until', type: 'date',
             value: q ? q.valid_until : UI.addDays(UI.today(), 30) })}
-          ${UI.field({ name: 'delivery_days', label: 'Delivery (days from order)', type: 'number',
-            value: q ? q.delivery_days : 0 })}
+          ${UI.field({ name: 'delivery_weeks', label: 'Delivery (weeks from order)', type: 'number',
+            min: 0, value: q ? (q.delivery_weeks || Math.ceil((q.delivery_days || 0) / 7)) : 0,
+            hint: 'How this trade quotes a lead time.' })}
         </div>
         <h4 class="mt">Lines</h4>
         <div id="lines"></div>
