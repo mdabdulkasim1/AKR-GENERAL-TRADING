@@ -71,6 +71,7 @@ function migrate() {
    * carried across once, rounding a part week up, because a lead time that
    * rounds down is a promise the company cannot keep.
    */
+  correctSeededContactDetails();
   for (const table of ['sales_quotations', 'supplier_quotations']) {
     if (ensureColumn(table, 'delivery_weeks', 'INTEGER NOT NULL DEFAULT 0')) {
       db.prepare(`UPDATE ${table} SET delivery_weeks = CAST((delivery_days + 6) / 7 AS INTEGER)
@@ -81,6 +82,64 @@ function migrate() {
   // The working behind a quoted rate, on the line it belongs to.
   ensureColumn('sales_quotation_items', 'cost_build', 'TEXT');
   return db;
+}
+
+/*
+ * The company's real address and telephone number.
+ *
+ * The first version shipped with a placeholder tower, a wrong post box and a
+ * telephone number of all zeroes, and those are what has been printing on the
+ * head of every quotation, LPO and tax invoice. A client rings the number on
+ * the invoice.
+ *
+ * Only rows that still hold the placeholder are corrected. Anything somebody
+ * has already typed for themselves is theirs and is left exactly as it is.
+ */
+const REAL = {
+  address: '206 & 706, Park Avenue Building, DSO, Dubai, UAE — P.O. Box 1955',
+  phone: '+971 4 269 1370',
+  website: 'www.akr365.com',
+};
+
+function correctSeededContactDetails() {
+  try {
+    /*
+     * The sister companies are seeded with no address at all, which prints an
+     * empty letterhead. They sit at the group's own office until somebody says
+     * otherwise, so they get the same details — and anyone who wants their own
+     * types them under Masters -> Companies.
+     */
+    db.prepare(`UPDATE companies SET address = @address
+                 WHERE address IS NULL OR address = ''
+                    OR address LIKE '%Park Avenue Tower%' OR address LIKE '%19556%'`).run(REAL);
+    db.prepare(`UPDATE companies SET phone = @phone
+                 WHERE phone IS NULL OR phone IN ('+971 4 000 0000', '')`).run(REAL);
+    db.prepare(`UPDATE companies SET email = 'sales@akr365.com'
+                 WHERE email IS NULL OR email = ''`).run();
+    /*
+     * The yard has its own copy of the address, and it is the one that prints
+     * under "Deliver to" on every LPO — so a maker sent material to the tower
+     * that is not the building.
+     */
+    db.prepare(`UPDATE locations SET address = @address
+                 WHERE address LIKE '%Park Avenue Tower%' OR address LIKE '%19556%'`).run(REAL);
+    /*
+     * A tax invoice snapshots the company's address at issue, and reprints as
+     * it was issued — which is right, and is why this is narrowed to the one
+     * string that was never the company's address in the first place. An
+     * invoice bearing a placeholder is not a record of anything; it is a
+     * mistake, and a UAE tax invoice showing the wrong address is one the FTA
+     * would have something to say about.
+     */
+    db.prepare(`UPDATE sales_invoices SET company_address = @address
+                 WHERE company_address LIKE '%Park Avenue Tower%'
+                    OR company_address LIKE '%19556%'`).run(REAL);
+    db.prepare("UPDATE companies SET website = @website WHERE website IS NULL OR website = ''")
+      .run(REAL);
+  } catch (err) {
+    // A contact detail is not worth refusing to start over.
+    console.warn('[setup] contact details:', err.message);
+  }
 }
 
 /*

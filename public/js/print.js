@@ -68,12 +68,6 @@
         margin: 10px 0 2px; text-align: center; font-size: 12.5px; font-weight: 700;
         letter-spacing: 3.4px; text-transform: uppercase; color: #0E3A5C;
       }
-      .doc-app {
-        text-align: center; font-size: 9.5px; letter-spacing: 1.6px; text-transform: uppercase;
-        color: #0E4E2F; background: #E3F0E9; border-radius: 3px; padding: 3px 8px;
-        display: inline-block; margin: 0 auto 8px; font-weight: 700;
-      }
-      .app-wrap { text-align: center; }
 
       .parties { display: flex; gap: 12px; margin-top: 8px; }
       .parties .box { flex: 1; border: 1px solid #DDE5EC; border-radius: 4px; padding: 7px 9px; }
@@ -179,9 +173,17 @@
     </div>`;
   }
 
-  const title = (text, application) =>
-    `<div class="doc-title">${esc(text)}</div>` +
-    (application ? `<div class="app-wrap"><span class="doc-app">Application — ${esc(application)}</span></div>` : '<div style="height:6px"></div>');
+  /*
+   * The document's name, and nothing under it.
+   *
+   * The application — potable water, storm water, irrigation — used to print
+   * beneath the title. It is how the company files a job internally, not
+   * something a client or a maker needs on the face of the paper, and on a
+   * mixed order it is only true of some of the lines. It is still recorded on
+   * every document and still on screen; it simply no longer prints.
+   */
+  const title = (text) =>
+    `<div class="doc-title">${esc(text)}</div><div style="height:6px"></div>`;
 
   function party(label, name, lines) {
     return `<div class="box"><div class="k">${esc(label)}</div><div class="v">${esc(name || '—')}</div>
@@ -295,7 +297,7 @@
         ...(window.APP ? APP.company : {}), name2: null };
       const body = `<div class="doc">
         ${letterhead(APP.company)}
-        ${title('Quotation', q.application_name)}
+        ${title('Quotation')}
         <div class="parties">
           ${party('To', q.client_name, [q.client_address, q.attention ? 'Attn: ' + q.attention : '',
             q.client_trn ? 'TRN ' + q.client_trn : ''])}
@@ -323,7 +325,7 @@
       const o = data.order;
       const body = `<div class="doc">
         ${letterhead(APP.company)}
-        ${title('Local Purchase Order', o.application_name)}
+        ${title('Local Purchase Order')}
         <div class="parties">
           ${party('To (supplier)', o.supplier_name, [o.supplier_address,
             o.supplier_contact ? 'Attn: ' + o.supplier_contact : '',
@@ -384,7 +386,7 @@
       const d = data.delivery;
       const body = `<div class="doc">
         ${letterhead(APP.company)}
-        ${title('Delivery Note', d.application_name)}
+        ${title('Delivery Note')}
         <div class="parties">
           ${party('Delivered to', d.client_name, [d.delivery_address || d.client_address,
             d.client_trn ? 'TRN ' + d.client_trn : ''])}
@@ -429,7 +431,7 @@
       };
       const body = `<div class="doc">
         ${letterhead(company)}
-        ${title('Tax Invoice', i.application_name)}
+        ${title('Tax Invoice')}
         <div class="parties">
           ${party('Bill to', i.client_name, [i.client_address, i.client_trn ? 'TRN ' + i.client_trn : 'TRN not provided'])}
           ${party('Reference', i.client_lpo_no ? 'Your LPO ' + i.client_lpo_no : (i.so_no || '—'),
