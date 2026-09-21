@@ -118,14 +118,6 @@
       .lead { margin-top: 8px; font-size: 10px; color: #16232B; }
       .block.terms ol { margin: 3px 0 0; padding-left: 15px; }
       .block.terms li { font-size: 8.8px; line-height: 1.5; margin-bottom: 2px; }
-      .buyer {
-        margin-top: 11px; border: 1px solid #DDE5EC; border-radius: 4px; padding: 7px 9px;
-        font-size: 9.2px; color: #16232B; display: inline-block; min-width: 62mm;
-      }
-      .buyer .k {
-        font-size: 7.5px; letter-spacing: 1.1px; text-transform: uppercase; color: #93A3B3;
-        font-weight: 700; margin-bottom: 3px;
-      }
 
       .sign { display: flex; gap: 30px; margin-top: 20px; }
       .sign .box { flex: 1; }
@@ -257,14 +249,6 @@
       <ol>${points.map((p) => `<li>${esc(p)}</li>`).join('')}</ol></div>`;
   }
 
-  /** Who the order is from, as their own LPO prints it at the foot. */
-  const buyerBlock = (company) => {
-    const c = company || (window.APP && APP.company) || {};
-    return `<div class="buyer"><div class="k">Buyer details</div>
-      <b>${esc(c.name || '')}</b><br>${esc(c.address || '')}
-      ${c.trn ? `<br>TRN: ${esc(c.trn)}` : ''}</div>`;
-  };
-
   const signatures = (left, right) => `<div class="sign">
     <div class="box"><div class="line"></div><div class="cap">${esc(left)}</div></div>
     <div class="box"><div class="line"></div><div class="cap">${esc(right)}</div></div>
@@ -331,18 +315,16 @@
             o.supplier_contact ? 'Attn: ' + o.supplier_contact : '',
             o.supplier_trn ? 'TRN ' + o.supplier_trn : ''])}
           ${party('Deliver to', o.delivery_location || 'Main Yard',
-            [o.delivery_address, o.project ? 'Project: ' + o.project : ''])}
+            [o.delivery_address])}
         </div>
         ${meta([
           ['LPO no.', o.lpo_no],
           ['Date', UI.date(o.lpo_date)],
           ['Attn', o.attention || '—'],
           ['Supplier TRN', o.supplier_trn || '—'],
-          // Their own quotation number is what the supplier files by; ours is
-          // there too, and above both the enquiry the whole order came out of.
-          ['Our enquiry', o.enquiry_no || '—'],
+          // Their own quotation number is what the supplier files by, and the
+          // only quotation reference either side needs on the order itself.
           ['Your quotation', o.supplier_quote_ref || o.supplier_quote_no || '—'],
-          ['Our quotation ref', o.supplier_quote_no || '—'],
           ['SO reference', o.against_sales_order || '—'],
           /*
            * The client's own LPO number, where this is bought against one.
@@ -374,7 +356,6 @@
         ${o.authority ? `<div class="terms-band"><b>Approving authority:</b> ${esc(o.authority)}</div>` : ''}
         ${notes('Notes', o.notes)}
         ${conditions('Conditions of this order', o.terms_text)}
-        ${buyerBlock(APP.company)}
         ${signatures('Authorised for ' + (APP.company.name || 'AKR'), 'Supplier acknowledgement')}
         ${footer(APP.company, 'Please quote this LPO number on your delivery note and invoice.')}
       </div>`;

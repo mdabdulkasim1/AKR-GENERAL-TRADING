@@ -124,6 +124,18 @@ function correctSeededContactDetails() {
     db.prepare(`UPDATE locations SET address = @address
                  WHERE address LIKE '%Park Avenue Tower%' OR address LIKE '%19556%'`).run(REAL);
     /*
+     * And every document that took its copy of that address before the yard
+     * was corrected. The delivery address is snapshotted onto the order when
+     * it is raised, so fixing the location alone leaves an LPO already on a
+     * supplier's desk still pointing at the wrong building — which is the one
+     * place the mistake actually costs something.
+     */
+    for (const table of ['purchase_orders', 'sales_orders', 'delivery_notes']) {
+      db.prepare(`UPDATE ${table} SET delivery_address = @address
+                   WHERE delivery_address LIKE '%Park Avenue Tower%'
+                      OR delivery_address LIKE '%19556%'`).run(REAL);
+    }
+    /*
      * A tax invoice snapshots the company's address at issue, and reprints as
      * it was issued — which is right, and is why this is narrowed to the one
      * string that was never the company's address in the first place. An
