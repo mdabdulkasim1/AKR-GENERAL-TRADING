@@ -342,6 +342,15 @@
           ['Your quotation', o.supplier_quote_ref || o.supplier_quote_no || '—'],
           ['Our quotation ref', o.supplier_quote_no || '—'],
           ['SO reference', o.against_sales_order || '—'],
+          /*
+           * The client's own LPO number, where this is bought against one.
+           *
+           * It is the reference the maker quotes back on their delivery note
+           * and their invoice, and the one the client's site will ask for when
+           * the material arrives — which on a forward delivery is the only
+           * number anybody at that gate has.
+           */
+          ['Client LPO ref', o.against_client_lpo || '—'],
           ['Incoterms', o.incoterms || '—'],
           ['Required by', UI.date(o.delivery_date)],
         ])}

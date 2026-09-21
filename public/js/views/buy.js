@@ -369,6 +369,22 @@
           ${UI.field({ name: 'project', label: 'Project', value: sq ? sq.project || '' : (opts.project || '') })}
           ${UI.field({ name: 'delivery_address', label: 'Delivery address', rows: 2 })}
         </div>
+        ${/*
+          What this order is being bought for.
+          
+          Most of what the company buys, it buys against something a client has
+          already ordered. Naming that order here puts the client's own LPO
+          number on the printed LPO — the reference the maker will quote back on
+          their delivery note — and lets the lines be taken straight off it,
+          which is the whole of a forward delivery: the client asked for eight,
+          so eight is what is ordered from the maker.
+        */ ''}
+        ${UI.field({ name: 'sales_order_id', label: "Against our client's order",
+          blank: 'Not against a client order — buying for stock',
+          value: opts.salesOrderId || '',
+          hint: 'Their LPO number prints on this order, and their lines can be taken straight onto it.',
+          options: [] })}
+        <div id="so-lines"></div>
         ${enquiryNo ? `<div class="alert info">This order carries our enquiry
           <b class="mono">${esc(enquiryNo)}</b> — it prints on the LPO, so the maker can see what
           they priced.</div>` : ''}
@@ -383,11 +399,68 @@
         <div id="clauses">${UI.loading()}</div>
         ${sq ? `<input type="hidden" name="quotation_id" value="${sq.id}">` : ''}
         ${!sq && enquiry ? `<input type="hidden" name="enquiry_id" value="${enquiry.id}">` : ''}
-        ${opts.salesOrderId ? `<input type="hidden" name="sales_order_id" value="${opts.salesOrderId}">` : ''}
       </form>`,
-      onMount(modal) {
+      async onMount(modal) {
         const lines = opts.fromSupplierQuote ? opts.fromSupplierQuote.items : (opts.lines || []);
         modal._lines = LINES.LineEditor(modal.querySelector('#lines'), { side: 'buy', lines });
+
+        /*
+         * The client's order, and the lines under it.
+         *
+         * Choosing one shows what the client asked for, with what is still to
+         * go out against each line — that, not the ordered quantity, is what
+         * usually has to be bought. Tick what this maker is supplying and it
+         * drops onto the order; the rate stays empty, because that comes from
+         * their quotation and not from what we are charging the client.
+         */
+        const soEl = modal.querySelector('[name=sales_order_id]');
+        const panel = modal.querySelector('#so-lines');
+        const orders = (await API.get('/api/sales/orders' + API.qs({ limit: 200 }))
+          .catch(() => ({ rows: [] }))).rows.filter((o) => o.status !== 'cancelled');
+        soEl.innerHTML = '<option value="">Not against a client order — buying for stock</option>'
+          + orders.map((o) => `<option value="${o.id}">${esc(
+            `${o.so_no} · their LPO ${o.client_lpo_no || '—'} — ${o.client_name}`)}</option>`).join('');
+        if (opts.salesOrderId) soEl.value = String(opts.salesOrderId);
+
+        const showOrder = async () => {
+          panel.innerHTML = '';
+          if (!soEl.value) return;
+          const d = await API.get(`/api/sales/orders/${soEl.value}`).catch(() => null);
+          if (!d || !d.items.length) return;
+          panel.innerHTML = `<div class="card soft mt">
+            <div class="row-between">
+              <div><b>${esc(d.order.so_no)}</b> · their LPO
+                <b class="mono">${esc(d.order.client_lpo_no || '—')}</b> — ${esc(d.order.client_name)}</div>
+              <button type="button" class="btn ghost sm" id="so-take">Add the ticked lines</button>
+            </div>
+            <table class="tbl mt"><thead><tr><th></th><th>Item</th><th class="num">Ordered</th>
+              <th class="num">Still to go</th></tr></thead><tbody>
+              ${d.items.map((i, n) => {
+                const left = Math.max(0, (i.qty || 0) - (i.delivered_qty || 0));
+                return `<tr><td><input type="checkbox" data-take="${n}" ${left > 0 ? 'checked' : ''}></td>
+                  <td>${esc(i.description)}<div class="muted small mono">${esc(i.item_code || '')}</div></td>
+                  <td class="num">${UI.qty(i.qty)} ${esc(i.uom || '')}</td>
+                  <td class="num">${left > 0 ? UI.qty(left) : '<span class="muted">all delivered</span>'}</td>
+                </tr>`;
+              }).join('')}
+            </tbody></table></div>`;
+          panel.querySelector('#so-take').addEventListener('click', () => {
+            const take = [...panel.querySelectorAll('[data-take]:checked')]
+              .map((c) => d.items[Number(c.dataset.take)]);
+            if (!take.length) { UI.err('Tick the lines this maker is supplying.'); return; }
+            const already = modal._lines.rows().filter((r) => r.description);
+            modal._lines.set([...already, ...take.map((i) => ({
+              item_id: i.item_id, item_code: i.item_code, description: i.description,
+              application_id: i.application_id, uom: i.uom,
+              qty: Math.max(0, (i.qty || 0) - (i.delivered_qty || 0)) || i.qty,
+              // The maker's price comes from their quotation, not from ours.
+              unit_price: 0,
+            }))]);
+            UI.ok(`${take.length} line${take.length === 1 ? '' : 's'} taken from ${d.order.so_no}.`);
+          });
+        };
+        soEl.addEventListener('change', showOrder);
+        await showOrder();
 
         /*
          * The conditions name the supplier and the authority, so they are
