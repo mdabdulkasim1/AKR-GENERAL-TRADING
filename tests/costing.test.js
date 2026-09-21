@@ -182,3 +182,38 @@ test('a revision carries the working with it', async () => {
   assert.equal(full.items[0].cost_build.landed_cost, 669.9,
     'the next revision knows how the rate was built, without it being typed again');
 });
+
+test("the maker's price converts, and the charges do not", async () => {
+  /*
+   * A European maker quotes in euro; the client is invoiced in dirhams. Only
+   * the material crosses — shipping is paid to a local forwarder, duty to UAE
+   * customs and the bank's charge to the bank here — so the rate of exchange
+   * applies to the material and to nothing else.
+   */
+  const built = await admin.post('/api/sales/costing', {
+    material: 100, qty: 2, currency: 'USD', exchange_rate: 3.6725,
+    components: [{ label: 'Shipping', basis: 'lump_sum', value: 200 }],
+    profit_percent: 10,
+  });
+  assert.equal(built.quoted_rate, 100, 'what they quoted, in their money');
+  assert.equal(built.currency, 'USD');
+  assert.equal(built.exchange_rate, 3.6725);
+  assert.equal(built.material_rate, 367.25, 'and what it comes to in ours');
+  assert.equal(built.charges_per_unit, 100, 'the lump sum is ours already, over two pieces');
+  assert.equal(built.landed_cost, 467.25);
+  assert.equal(built.rate, 513.98, 'ten per cent on the landed cost');
+});
+
+test('the company\'s own currency needs no rate, and a bad one is ignored', async () => {
+  const home = await admin.post('/api/sales/costing',
+    { material: 100, qty: 1, currency: 'AED', exchange_rate: 3.67 });
+  assert.equal(home.exchange_rate, 1, 'a rate against our own money is meaningless');
+  assert.equal(home.material_rate, 100);
+
+  for (const bad of [0, -2, 'nonsense', null]) {
+    const out = await admin.post('/api/sales/costing',
+      { material: 50, qty: 1, currency: 'EUR', exchange_rate: bad });
+    assert.equal(out.exchange_rate, 1, `${bad} is not a rate of exchange`);
+    assert.equal(out.material_rate, 50, 'so the price stands as given');
+  }
+});

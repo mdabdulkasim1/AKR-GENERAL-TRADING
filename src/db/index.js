@@ -51,6 +51,16 @@ function migrate() {
   ensureColumn('expenses', 'so_id', 'INTEGER REFERENCES sales_orders(id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_po ON expenses(po_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_so ON expenses(so_id)');
+  /*
+   * What a document was priced in, where it was not dirhams.
+   *
+   * The currency column has always been there; the rate it was converted at
+   * has not, and without it a euro order cannot be read back into the books
+   * months later at the rate that was actually agreed.
+   */
+  for (const table of ['purchase_orders', 'sales_quotations', 'supplier_quotations']) {
+    ensureColumn(table, 'exchange_rate', 'REAL NOT NULL DEFAULT 1');
+  }
   ensureCostingHeads();
   // The working behind a quoted rate, on the line it belongs to.
   ensureColumn('sales_quotation_items', 'cost_build', 'TEXT');

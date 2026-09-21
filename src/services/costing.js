@@ -60,8 +60,27 @@ const num = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
  * per unit — a lump sum for the shipment is divided over the quantity, and a
  * quantity of nothing carries no lump sums at all rather than dividing by zero.
  */
-function build({ material = 0, qty = 1, components = [], profit_percent = 0 } = {}) {
-  const materialRate = round(material);
+/*
+ * The maker's price is often not in dirhams.
+ *
+ * A European maker quotes in euro, a Chinese one in dollars, and the rate the
+ * client is given has to be in the currency of the invoice they will receive.
+ * So the material rate is entered in the currency it was quoted in, with the
+ * rate of exchange beside it, and everything from that point on — the charges,
+ * the landed cost, the margin — is reckoned in the company's own currency.
+ *
+ * The charges are already in dirhams: shipping is paid to a local forwarder,
+ * duty to UAE customs, the bank's charge by the bank here. Only the material
+ * crosses.
+ */
+function build({
+  material = 0, qty = 1, components = [], profit_percent = 0,
+  currency = 'AED', exchange_rate = 1,
+} = {}) {
+  const quoted = round(material);
+  const cur = String(currency || 'AED').toUpperCase().slice(0, 4);
+  const fx = cur === 'AED' ? 1 : (num(exchange_rate) > 0 ? num(exchange_rate) : 1);
+  const materialRate = round(quoted * fx);
   const quantity = num(qty) > 0 ? num(qty) : 0;
 
   let running = materialRate;
@@ -94,6 +113,11 @@ function build({ material = 0, qty = 1, components = [], profit_percent = 0 } = 
   const rate = round(landed + profitPerUnit);
 
   return {
+    // What the maker quoted, and in what — kept so the working can be read
+    // back later against their quotation.
+    quoted_rate: quoted,
+    currency: cur,
+    exchange_rate: fx,
     material_rate: materialRate,
     qty: quantity,
     steps,

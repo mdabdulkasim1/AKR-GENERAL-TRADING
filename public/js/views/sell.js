@@ -188,6 +188,10 @@
             hint: 'The title this quotation carries.' })}
           ${UI.field({ name: 'payment_terms_id', label: 'Payment terms', blank: "The client's own terms",
             value: q ? q.payment_terms_id : '', options: APP.termsOptions('client') })}
+          ${UI.field({ name: 'currency', label: 'Quote in',
+            value: (q && q.currency) || APP.currency || 'AED',
+            options: LINES.CURRENCIES.map((c) => ({ value: c, label: c })),
+            hint: 'The currency the client is quoted and invoiced in.' })}
         </div>
         <div class="grid g3">
           ${UI.field({ name: 'subject', label: 'Subject', value: q ? q.subject || '' : (preset ? preset.subject || '' : '') })}

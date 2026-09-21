@@ -9,6 +9,16 @@
 (function () {
   'use strict';
   const esc = (v) => UI.esc(v);
+
+  /*
+   * The currencies the company actually trades in, its own first.
+   *
+   * Not every currency in the world: a list somebody has to scroll is a list
+   * somebody picks the wrong line out of. These are the makers' currencies and
+   * the Gulf's.
+   */
+  const CURRENCIES = ['AED', 'USD', 'EUR', 'GBP', 'INR', 'CNY', 'JPY', 'CHF',
+    'SAR', 'QAR', 'OMR', 'KWD', 'BHD', 'SGD', 'TRY'];
   const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
   let itemCache = null;
@@ -99,8 +109,12 @@
         // How the rate was arrived at, where somebody built one. Internal: it
         // is never printed and never leaves this grid except onto the line.
         cost_build: l.cost_build && l.cost_build.components
-          ? { material: l.cost_build.material_rate !== undefined
-                ? l.cost_build.material_rate : l.cost_build.material,
+          ? { material: l.cost_build.quoted_rate !== undefined
+                ? l.cost_build.quoted_rate
+                : (l.cost_build.material_rate !== undefined
+                  ? l.cost_build.material_rate : l.cost_build.material),
+              currency: l.cost_build.currency || 'AED',
+              exchange_rate: l.cost_build.exchange_rate || 1,
               profit_percent: l.cost_build.profit_percent || 0,
               components: (l.cost_build.components || l.cost_build.steps || [])
                 .map((c) => ({ label: c.label, basis: c.basis, value: c.value })) }
@@ -245,6 +259,9 @@
           state.rows[i].cost_price = built.landed_cost;
           state.rows[i].cost_build = {
             material: built.material_rate,
+            quoted_rate: built.quoted_rate,
+            currency: built.currency,
+            exchange_rate: built.exchange_rate,
             profit_percent: built.profit_percent,
             components: built.steps.map((c) => ({ label: c.label, basis: c.basis, value: c.value })),
           };
@@ -401,6 +418,8 @@
       material: start.material || 0,
       qty: row.qty || 1,
       profit_percent: start.profit_percent || 0,
+      currency: start.currency || (APP.currency || 'AED'),
+      exchange_rate: start.exchange_rate || 1,
       components: (start.components || []).map((c) => ({ ...c })),
     };
 
@@ -422,12 +441,24 @@
         The client sees the rate; this is how it was reached.</div>
         <div class="grid g3">
           ${UI.field({ name: 'material', label: "Manufacturer's material rate", type: 'number',
-            step: '0.01', value: state.material, hint: 'Per unit, as they quoted it.' })}
+            step: '0.01', value: state.material, hint: 'Per unit, in the currency they quoted it in.' })}
+          ${UI.field({ name: 'currency', label: 'They quoted in', value: state.currency,
+            options: CURRENCIES.map((c) => ({ value: c, label: c })) })}
+          ${UI.field({ name: 'exchange_rate', label: 'Rate of exchange', type: 'number',
+            step: '0.0001', value: state.exchange_rate,
+            hint: `How many ${APP.currency || 'AED'} to one.` })}
+        </div>
+        <div class="grid g2">
           ${UI.field({ name: 'qty', label: 'Quantity', type: 'number', step: '0.001',
             value: state.qty, hint: 'A lump sum is divided over this.' })}
           ${UI.field({ name: 'profit_percent', label: 'Profit %', type: 'number', step: '0.01',
             value: state.profit_percent, hint: 'Added to the landed cost.' })}
         </div>
+        ${/*
+          The charges below are in the company's own currency on purpose:
+          shipping is paid to a local forwarder, duty to UAE customs and the
+          bank's charge to the bank here. Only the material crosses.
+        */ ''}
         <h4 class="mt">Charges on top</h4>
         <div class="muted small mb">In the order they are applied — a charge reckoned on the running
           total counts everything above it.</div>
@@ -453,6 +484,9 @@
             if (cell) cell.textContent = UI.money(step.per_unit, { symbol: false });
           });
           out.innerHTML = `
+            ${built.currency && built.currency !== (APP.currency || 'AED') ? `
+              <tr><td class="muted">They quoted</td><td class="num">${esc(built.currency)} ${
+                UI.money(built.quoted_rate, { symbol: false })} @ ${built.exchange_rate}</td></tr>` : ''}
             <tr><td class="muted">Material</td><td class="num">${UI.money(built.material_rate, { symbol: false })}</td></tr>
             <tr><td class="muted">Charges on it</td><td class="num">${UI.money(built.charges_per_unit, { symbol: false })}</td></tr>
             <tr><td class="muted"><b>Landed cost, per unit</b></td>
@@ -472,6 +506,7 @@
           built = await API.post('/api/sales/costing', {
             material: state.material, qty: state.qty,
             profit_percent: state.profit_percent, components: state.components,
+            currency: state.currency, exchange_rate: state.exchange_rate,
           });
           paint();
         };
@@ -497,11 +532,26 @@
           recalc();
         };
 
-        modal.querySelectorAll('[name=material], [name=qty], [name=profit_percent]')
+        modal.querySelectorAll('[name=material], [name=qty], [name=profit_percent], [name=exchange_rate]')
           .forEach((el) => el.addEventListener('input', () => {
             state[el.name] = Number(el.value) || 0;
             soon();
           }));
+        const curEl = modal.querySelector('[name=currency]');
+        const fxEl = modal.querySelector('[name=exchange_rate]');
+        const fxShown = () => {
+          // The company's own currency needs no rate, and showing the box
+          // invites somebody to type one and wonder why nothing moved.
+          const home = state.currency === (APP.currency || 'AED');
+          fxEl.closest('.field').hidden = home;
+          if (home) { state.exchange_rate = 1; fxEl.value = 1; }
+        };
+        curEl.addEventListener('change', () => {
+          state.currency = curEl.value;
+          fxShown();
+          soon();
+        });
+        fxShown();
         modal.querySelector('#add-charge').addEventListener('click', () => {
           state.components.push({ label: '', basis: 'per_unit', value: 0 });
           redrawCharges();
@@ -523,6 +573,6 @@
     });
   }
 
-  window.LINES = { LineEditor, catalogue, search, openRateBuilder,
+  window.LINES = { LineEditor, catalogue, search, openRateBuilder, CURRENCIES,
     refresh: () => catalogue(true) };
 })();

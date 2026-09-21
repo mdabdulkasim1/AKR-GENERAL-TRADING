@@ -175,11 +175,11 @@ router.post('/quotations', buyer, wrap(async (req, res) => {
     const info = db.prepare(`
       INSERT INTO supplier_quotations (company_id, quote_no, partner_id, enquiry_id, application_id,
         supplier_ref, subject, project, quote_date, valid_until, payment_terms_id, delivery_days,
-        currency, subtotal, discount, vat_amount, total, status, notes, terms_text,
+        currency, exchange_rate, subtotal, discount, vat_amount, total, status, notes, terms_text,
         linked_sales_quotation_id, created_by)
       VALUES (@company_id, @quote_no, @partner_id, @enquiry_id, @application_id, @supplier_ref,
         @subject, @project, @quote_date, @valid_until, @payment_terms_id, @delivery_days, @currency,
-        @subtotal, @discount, @vat_amount, @total, @status, @notes, @terms_text,
+        @exchange_rate, @subtotal, @discount, @vat_amount, @total, @status, @notes, @terms_text,
         @linked_sales_quotation_id, @created_by)`).run({
       company_id: company.id,
       quote_no: quoteNo,
@@ -195,6 +195,8 @@ router.post('/quotations', buyer, wrap(async (req, res) => {
       payment_terms_id: b.payment_terms_id || supplier.payment_terms_id || null,
       delivery_days: v.int(b.delivery_days, 0),
       currency: v.str(b.currency, supplier.currency || 'AED'),
+      // One dirham to one, unless the order is in somebody else's money.
+      exchange_rate: v.num(b.exchange_rate, 1) > 0 ? v.num(b.exchange_rate, 1) : 1,
       ...priced.footer,
       status,
       notes: v.str(b.notes),
@@ -427,11 +429,11 @@ router.post('/orders', buyer, wrap(async (req, res) => {
     const info = db.prepare(`
       INSERT INTO purchase_orders (company_id, lpo_no, partner_id, quotation_id, enquiry_id, application_id,
         sales_order_id, project, attention, incoterms, authority, lpo_date, delivery_date,
-        delivery_location_id, delivery_address, payment_terms_id, currency, subtotal, discount,
+        delivery_location_id, delivery_address, payment_terms_id, currency, exchange_rate, subtotal, discount,
         vat_amount, total, status, notes, terms_text, created_by)
       VALUES (@company_id, @lpo_no, @partner_id, @quotation_id, @enquiry_id, @application_id, @sales_order_id,
         @project, @attention, @incoterms, @authority, @lpo_date, @delivery_date,
-        @delivery_location_id, @delivery_address, @payment_terms_id, @currency, @subtotal, @discount,
+        @delivery_location_id, @delivery_address, @payment_terms_id, @currency, @exchange_rate, @subtotal, @discount,
         @vat_amount, @total, @status, @notes, @terms_text, @created_by)`).run({
       company_id: company.id,
       lpo_no: lpoNo,
@@ -450,6 +452,8 @@ router.post('/orders', buyer, wrap(async (req, res) => {
       delivery_address: v.str(b.delivery_address) || (location ? location.address : null),
       payment_terms_id: paymentTermsId,
       currency: v.str(b.currency, supplier.currency || 'AED'),
+      // One dirham to one, unless the order is placed in somebody else's money.
+      exchange_rate: v.num(b.exchange_rate, 1) > 0 ? v.num(b.exchange_rate, 1) : 1,
       ...priced.footer,
       status: v.oneOf(b.status, ['draft', 'sent'], 'status') || 'draft',
       notes: v.str(b.notes),

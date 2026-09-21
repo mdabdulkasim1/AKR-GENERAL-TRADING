@@ -365,6 +365,15 @@
           ${UI.field({ name: 'authority', label: 'Approving authority',
             placeholder: 'DEWA', hint: 'Named in the inspection conditions below.' })}
         </div>
+        <div class="grid g3">
+          ${UI.field({ name: 'currency', label: 'Order currency',
+            value: (sq && sq.currency) || APP.currency || 'AED',
+            options: LINES.CURRENCIES.map((c) => ({ value: c, label: c })),
+            hint: 'What this maker invoices in. It prints on the order.' })}
+          ${UI.field({ name: 'exchange_rate', label: 'Rate of exchange', type: 'number',
+            step: '0.0001', value: (sq && sq.exchange_rate) || 1,
+            hint: `How many ${APP.currency || 'AED'} to one — kept so the cost can be read back.` })}
+        </div>
         <div class="grid g2">
           ${UI.field({ name: 'project', label: 'Project', value: sq ? sq.project || '' : (opts.project || '') })}
           ${UI.field({ name: 'delivery_address', label: 'Delivery address', rows: 2 })}

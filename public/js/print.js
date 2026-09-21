@@ -353,6 +353,17 @@
           ['Client LPO ref', o.against_client_lpo || '—'],
           ['Incoterms', o.incoterms || '—'],
           ['Required by', UI.date(o.delivery_date)],
+          /*
+           * What the order is placed in.
+           *
+           * The maker needs to read his own price back in his own money, and
+           * an order that says 24,600 without saying of what is an argument
+           * waiting to happen. The rate is beside it where one was agreed, so
+           * both sides can see what was converted at.
+           */
+          ['Currency', o.currency && o.exchange_rate && Number(o.exchange_rate) !== 1
+            ? `${o.currency} — at ${o.exchange_rate} ${APP.currency || 'AED'} to one`
+            : (o.currency || APP.currency || 'AED')],
         ])}
         <div class="lead">We are pleased to place order for the below items.</div>
         ${itemsTable(data.items)}
