@@ -533,6 +533,40 @@ router.patch('/orders/:id', buyer, wrap(async (req, res) => {
   }
   const b = req.body;
 
+  /*
+   * The lines, where they are being changed.
+   *
+   * A draft is a working document: the rate came from a telephone call, the
+   * description needs the maker's own wording, a line was typed twice. Before
+   * it is sent, all of that is simply an edit. Once it has been sent it is an
+   * order somebody is working to, so what has already been received is the
+   * floor — such a line cannot be dropped, and cannot be cut below what has
+   * come in — and rows are updated where they stand rather than replaced,
+   * because a goods receipt's own lines hold their id.
+   */
+  const before = db.prepare('SELECT * FROM purchase_order_items WHERE po_id = ? ORDER BY line_no, id')
+    .all(order.id);
+  let priced = null;
+  if (Array.isArray(b.items)) {
+    if (!b.items.length) throw badRequest('An LPO needs at least one line.');
+    priced = docs.buildLines(b.items, { side: 'buy' });
+
+    const kept = new Set(b.items.map((i) => Number(i.id)).filter(Boolean));
+    for (const line of before) {
+      if (!kept.has(line.id) && (line.received_qty || 0) > 0) {
+        throw conflict(`${line.description} has already been received against, `
+          + 'so it cannot be taken off this order.');
+      }
+    }
+    b.items.forEach((incoming, i) => {
+      const was = incoming.id ? before.find((e) => e.id === Number(incoming.id)) : null;
+      if (was && priced.lines[i].qty < (was.received_qty || 0)) {
+        throw conflict(`${was.description}: ${was.received_qty} ${was.uom} has already come in, `
+          + 'so the line cannot be cut below that.');
+      }
+    });
+  }
+
   // Sent as a list of points, or as one block; either way it is stored as the
   // block that prints.
   const termsText = Array.isArray(b.terms)
@@ -553,6 +587,66 @@ router.patch('/orders/:id', buyer, wrap(async (req, res) => {
     notes: v.str(b.notes, order.notes),
     terms_text: termsText,
   });
+
+  if (priced) {
+    tx(() => {
+      const kept = new Set();
+      const cols = docs.LINE_COLUMNS.purchaseOrder;
+      priced.lines.forEach((line, i) => {
+        const id = Number(b.items[i].id) || null;
+        const was = id ? before.find((e) => e.id === id) : null;
+        if (was) {
+          kept.add(was.id);
+          db.prepare(`UPDATE purchase_order_items SET line_no = @line_no, `
+            + `${cols.map((c) => `${c} = @${c}`).join(', ')} WHERE id = @id`).run({
+            id: was.id,
+            line_no: i + 1,
+            ...Object.fromEntries(cols.map((c) => [c, line[c] === undefined ? null : line[c]])),
+          });
+        } else {
+          docs.insertLines('purchase_order_items', 'po_id', order.id, [line], cols);
+          db.prepare('UPDATE purchase_order_items SET line_no = ? WHERE id = ?')
+            .run(i + 1, db.prepare('SELECT MAX(id) AS m FROM purchase_order_items').get().m);
+        }
+      });
+      for (const line of before) {
+        if (!kept.has(line.id)) db.prepare('DELETE FROM purchase_order_items WHERE id = ?').run(line.id);
+      }
+      db.prepare(`UPDATE purchase_orders SET subtotal = @subtotal, discount = @discount,
+          vat_amount = @vat_amount, total = @total, application_id = @application_id
+        WHERE id = @id`).run({
+        ...priced.footer, id: order.id,
+        application_id: docs.resolveApplication(b.application_id || order.application_id, priced.lines),
+      });
+
+      /*
+       * A draft holds no stock — material goes on order when the LPO is sent —
+       * so editing one moves nothing. An order already with the maker moves by
+       * the difference, and what has been received is left alone.
+       */
+      if (!['draft', 'cancelled'].includes(order.status)) {
+        const wasQty = new Map();
+        for (const l of before) if (l.item_id) wasQty.set(l.item_id, (wasQty.get(l.item_id) || 0) + l.qty);
+        const nowQty = new Map();
+        for (const l of priced.lines) if (l.item_id) nowQty.set(l.item_id, (nowQty.get(l.item_id) || 0) + l.qty);
+        for (const itemId of new Set([...wasQty.keys(), ...nowQty.keys()])) {
+          const delta = pricing.round((nowQty.get(itemId) || 0) - (wasQty.get(itemId) || 0));
+          if (!delta) continue;
+          stock.post({
+            companyId: order.company_id, itemId, locationId: order.delivery_location_id,
+            bucket: 'ordered', kind: 'lpo_placed', qty: delta,
+            refType: 'purchase_order', refId: order.id, refNo: order.lpo_no,
+            partnerId: order.partner_id, movedOn: v.today(), userId: req.user.id,
+            notes: `${delta > 0 ? 'Added to' : 'Taken off'} ${order.lpo_no} — amended`,
+          });
+        }
+      }
+    })();
+    audit.log(req, 'purchase_order.lines_changed', 'purchase_order', order.id, {
+      lpoNo: order.lpo_no, status: order.status,
+      was: order.total, now: priced.footer.total,
+    });
+  }
 
   if (termsText !== order.terms_text) {
     audit.log(req, 'purchase_order.terms_changed', 'purchase_order', order.id, {

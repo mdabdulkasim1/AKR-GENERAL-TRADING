@@ -298,7 +298,7 @@
       footer: `<button class="btn ghost" data-act="__close">Close</button>
         <button class="btn ghost" data-act="print">Print the LPO</button>
         ${APP.can(['kam']) && !['received', 'closed', 'cancelled'].includes(o.status)
-          ? '<button class="btn ghost" data-act="terms">Edit the conditions</button>' : ''}
+          ? '<button class="btn ghost" data-act="terms">Edit items &amp; conditions</button>' : ''}
         ${APP.can(['kam']) && o.status === 'draft' ? '<button class="btn gold" data-act="send">Send it to the maker</button>' : ''}
         ${APP.can(['logistics', 'kam']) && ['sent', 'acknowledged', 'partial'].includes(o.status)
           ? '<button class="btn green" data-act="receive">Receive goods</button>' : ''}
@@ -549,28 +549,56 @@
    * the order goes out — but never silently: what it said before is kept in
    * the audit trail, and a sent order is marked as needing to be reissued.
    */
+  /*
+   * Editing an order: the lines as well as the conditions.
+   *
+   * A draft is a working document. The rate came off a telephone call and has
+   * been beaten down since, the maker words the description differently, a line
+   * was typed twice. All of that is simply an edit before the order goes.
+   *
+   * After it has gone it is an order somebody is working to, so what has been
+   * received is the floor — such a line cannot be dropped or cut below what has
+   * come in — and the material already on order moves by the difference.
+   */
   function editOrderTerms(data) {
     const o = data.order;
+    const got = (data.items || []).filter((i) => (i.received_qty || 0) > 0);
     UI.modal({
-      title: `Conditions of ${o.lpo_no}`,
+      title: `${o.lpo_no} — items and conditions`,
       size: 'wide',
       body: `
         ${o.status !== 'draft' ? `<div class="alert warn"><b>This LPO has already gone to
-          ${esc(o.supplier_name)}.</b> Changing the conditions here changes our record of the order —
+          ${esc(o.supplier_name)}.</b> Changing it here changes our record of the order —
           send them the amended copy as well, or they are working to the old one. The change is
           recorded in the audit trail either way.</div>` : ''}
+        ${got.length ? `<div class="alert"><b>Already received against this order:</b>
+          ${got.map((i) => `${esc(i.description)} — ${UI.qty(i.received_qty)} of ${UI.qty(i.qty)}`).join('; ')}.
+          Those lines can be added to, but not removed or cut below what has come in.</div>` : ''}
         <form id="t-form">
           <div class="grid g3">
             ${UI.field({ name: 'attention', label: 'For the attention of', value: o.attention || '' })}
             ${UI.field({ name: 'incoterms', label: 'Incoterms / delivery basis', value: o.incoterms || '' })}
             ${UI.field({ name: 'authority', label: 'Approving authority', value: o.authority || '' })}
           </div>
+          <div class="grid g3">
+            ${UI.field({ name: 'project', label: 'Project', value: o.project || '' })}
+            ${UI.field({ name: 'delivery_date', label: 'Delivery wanted by', type: 'date',
+              value: o.delivery_date || '' })}
+          </div>
         </form>
+        <h4 class="mt">Lines</h4>
+        <div class="muted small mb">Rate, quantity, description, the item itself — and add or drop a
+          line. The totals and the VAT move as you type.</div>
+        <div id="lines"></div>
+        <h4 class="mt">Conditions of this order</h4>
         <div id="clauses"></div>`,
       footer: `<button class="btn ghost" data-act="__close">Cancel</button>
                <button class="btn ghost" data-act="reset">Start again from the standard list</button>
-               <button class="btn" data-act="save">Save the conditions</button>`,
+               <button class="btn" data-act="save">Save the order</button>`,
       onMount(modal) {
+        modal._lines = LINES.LineEditor(modal.querySelector('#lines'), {
+          side: 'buy', lines: data.items || [],
+        });
         modal._clauses = CLAUSES.Editor(modal.querySelector('#clauses'), { clauses: data.conditions });
       },
       async onAction(act, modal) {
@@ -586,13 +614,17 @@
           UI.ok('Rebuilt from the standard list. Nothing is saved until you press save.');
           return 'keep';
         }
-        if (act !== 'save') return;
+        if (act !== 'save') return undefined;
         const form = modal.querySelector('#t-form');
-        await API.patch(`/api/purchase/orders/${o.id}`, {
-          ...UI.formValues(form), terms: modal._clauses.value(),
+        const items = modal._lines.value();
+        if (!items.length) { UI.err('An LPO needs at least one line.'); return 'keep'; }
+        const saved = await API.patch(`/api/purchase/orders/${o.id}`, {
+          ...UI.formValues(form), items, terms: modal._clauses.value(),
         });
-        UI.ok('Conditions saved.');
+        UI.ok(`${saved.lpo_no} saved — ${items.length} line${items.length === 1 ? '' : 's'}, `
+          + `${UI.money(saved.total)}.`);
         APP.reload();
+        return undefined;
       },
     });
   }

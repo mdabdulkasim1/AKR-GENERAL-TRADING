@@ -542,3 +542,60 @@ test('a lead time is quoted in weeks, and kept in days as well', async () => {
   assert.equal(gotSq.quotation.delivery_weeks, 10);
   assert.equal(gotSq.quotation.delivery_days, 70);
 });
+
+test('a draft LPO can be edited — rate, description, lines and all', async () => {
+  /*
+   * A draft is a working document: the rate came off a telephone call and has
+   * been beaten down since, the maker words the description differently, a line
+   * was typed twice. Before the order goes, all of that is simply an edit, and
+   * a draft holds no stock, so nothing moves in the register.
+   */
+  const quote = await askForPrice(admin, {
+    partner_id: ctx.supplier.id,
+    items: [{ item_id: ctx.item.id, qty: 10, unit_price: 500 }],
+  });
+  await admin.post(`/api/purchase/quotations/${quote.id}/approve`);
+  const lpo = await admin.post('/api/purchase/orders', {
+    partner_id: ctx.supplier.id, quotation_id: quote.id,
+    items: [{ item_id: ctx.item.id, qty: 10, unit_price: 500 }],
+  });
+  const draft = await admin.get(`/api/purchase/orders/${lpo.id}`);
+  assert.equal(draft.order.status, 'draft');
+  const line = draft.items[0];
+  const onOrderBefore = (await admin.get(`/api/stock/items/${ctx.item.id}`)).balance.on_order;
+
+  const second = (await admin.get('/api/items?limit=2')).rows.find((i) => i.id !== ctx.item.id);
+  const edited = await admin.patch(`/api/purchase/orders/${lpo.id}`, {
+    items: [
+      { id: line.id, item_id: line.item_id, qty: 12, unit_price: 460,
+        description: "Maker's own wording for the same thing" },
+      { item_id: second.id, qty: 2, unit_price: 75 },
+    ],
+  });
+  assert.ok(edited.total !== lpo.total, 'the order is repriced');
+
+  const after = await admin.get(`/api/purchase/orders/${lpo.id}`);
+  assert.equal(after.items.length, 2);
+  assert.equal(after.items[0].id, line.id, 'the row is updated, not replaced');
+  assert.equal(after.items[0].qty, 12);
+  assert.equal(after.items[0].unit_price, 460, 'the rate was beaten down');
+  assert.match(after.items[0].description, /Maker's own wording/);
+
+  assert.equal((await admin.get(`/api/stock/items/${ctx.item.id}`)).balance.on_order, onOrderBefore,
+    'a draft holds no stock, so editing one moves nothing');
+
+  // Once sent, the material goes on order for what the order now says.
+  await admin.post(`/api/purchase/orders/${lpo.id}/send`);
+  assert.equal((await admin.get(`/api/stock/items/${ctx.item.id}`)).balance.on_order,
+    onOrderBefore + 12, 'twelve, not the ten it was raised for');
+
+  // And a sent order moves the difference rather than posting the line again.
+  await admin.patch(`/api/purchase/orders/${lpo.id}`, {
+    items: [
+      { id: after.items[0].id, item_id: line.item_id, qty: 15, unit_price: 460 },
+      { id: after.items[1].id, item_id: second.id, qty: 2, unit_price: 75 },
+    ],
+  });
+  assert.equal((await admin.get(`/api/stock/items/${ctx.item.id}`)).balance.on_order,
+    onOrderBefore + 15, 'fifteen in total, not twenty-seven');
+});
